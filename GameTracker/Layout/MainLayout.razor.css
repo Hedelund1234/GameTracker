@@ -1,0 +1,10 @@
+.main-layout {
+    background-color: #1e1e1e;
+    min-height: 100vh;
+    color: white;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.main-content {
+    padding: 2rem;
+}
