@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "GameTracker",
   "resources": {
-    "hash": "sha256-SoMVXSZV0Q8Pvn3yAh/hz28vt7Yd+iBg0L7a95lvZHM=",
+    "hash": "sha256-pC2Cd8VV5LT8dQCsWlJF/QSL4V4j3STDKhdT7IEivp4=",
     "jsModuleNative": {
       "dotnet.native.8.0.19.ihm50f0zha.js": "sha256-O/NCYcAN9uPocD7ns7AzF/cqx7f5vL1PTJCQs0vEXyk="
     },
@@ -18,7 +18,7 @@
     },
     "assembly": {
       "Blazored.LocalStorage.wasm": "sha256-OaMAAd5n7ORfyur5e3QIyEVKJ76MKIvwbg7/icnnYcU=",
-      "GameTracker.wasm": "sha256-+gA/7plL4SdpJ5uaL9zco+++DSOx9bi+zTHR6ZUIF2c=",
+      "GameTracker.wasm": "sha256-Ze6I3/pH8iLr8DN5opM/mx8joRUoBjQ7XXGp034Z8/g=",
       "Microsoft.AspNetCore.Components.wasm": "sha256-+oiA8M0fHBFP/Cc4jPhiK8HjfJXHV+1b/OIVWNb2XIo=",
       "Microsoft.AspNetCore.Components.Web.wasm": "sha256-NlVRuY+nqd87LUoFC1H8+L/ogpOqJ4z9W2tPGiysUfM=",
       "Microsoft.AspNetCore.Components.WebAssembly.wasm": "sha256-0rPDAmj+CobKpj5MXBXoJk2Wc1hndsu1M7/Dgek3i54=",

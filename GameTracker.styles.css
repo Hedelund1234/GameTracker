@@ -224,3 +224,32 @@
     .search-btn svg[b-4m4zgb7d5b] {
         fill: #fff;
     }
+
+.remove-btn[b-4m4zgb7d5b] {
+    background-color: #ff4d4d; /* Let rød */
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    margin-top: 8px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px; /* afstand mellem ikon og tekst */
+    transition: background-color 0.25s ease, transform 0.15s ease;
+}
+
+    .remove-btn:hover[b-4m4zgb7d5b] {
+        background-color: #e60000; /* Mørkere rød ved hover */
+        transform: translateY(-2px);
+    }
+
+    .remove-btn:active[b-4m4zgb7d5b] {
+        transform: translateY(0);
+    }
+
+    .remove-btn:focus[b-4m4zgb7d5b] {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(255, 77, 77, 0.4);
+    }
