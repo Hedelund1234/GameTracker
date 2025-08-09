@@ -1,0 +1,83 @@
+﻿@using GameTracker.Models.FaceItModels
+
+<div class="faceit-card" hidden="@(!HasData)">
+    <header class="card-header">
+        <img class="avatar" src="@Player!.Avatar" alt="@Player.Nickname" />
+        <div class="id-block">
+            <div class="nickname">@Player!.Nickname</div>
+            @if (CS2 is not null)
+            {
+                <div class="meta">
+                    <span class="pill elo">ELO @CS2.Elo</span>
+                    <span class="pill level">Level @CS2.SkillLevel</span>
+                    <span class="pill region">@CS2.Region</span>
+                </div>
+            }
+        </div>
+    </header>
+
+    <section class="stats-grid">
+        <div class="stat">
+            <div class="label">ADR</div>
+            <div class="value">@FaceItStats!.Lifetime.ADR</div>
+        </div>
+        <div class="stat">
+            <div class="label">Avg K/D</div>
+            <div class="value">@FaceItStats!.Lifetime.AverageKDRatio</div>
+        </div>
+        <div class="stat">
+            <div class="label">Avg HS%</div>
+            <div class="value">@AverageHeadshotLabel</div>
+        </div>
+        <div class="stat">
+            <div class="label">Win Rate</div>
+            <div class="value">@WinRateLabel</div>
+        </div>
+        <div class="stat">
+            <div class="label">Avg Kills / game</div>
+            <div class="value">@AverageKillsLabel</div>
+        </div>
+        <div class="stat">
+            <div class="label">Total Matches</div>
+            <div class="value">@FaceItStats!.Lifetime.TotalMatches</div>
+        </div>
+    </section>
+
+    <section class="recent">
+        <div class="recent-label">Recent results</div>
+        <div class="recent-row">
+            @foreach (var r in FaceItStats!.Lifetime.Last5Games.Take(5))
+            {
+                <span class="dot @(r == 1 ? "win" : "loss")" title="@(r == 1 ? "Win" : "Loss")"></span>
+            }
+        </div>
+    </section>
+</div>
+
+@if (!HasData)
+{
+    <div class="faceit-card placeholder">
+        <div>Ingen data endnu. Hent en spiller først.</div>
+    </div>
+}
+
+@code {
+    [Parameter] public Player? Player { get; set; }
+    [Parameter] public FaceItStats? FaceItStats { get; set; }
+
+    private Game? CS2 => Player?.Games?.CS2;
+    private bool HasData => Player is not null && FaceItStats is not null;
+
+    private string AverageHeadshotLabel =>
+        string.IsNullOrWhiteSpace(FaceItStats?.Lifetime.AverageHeadshot)
+            ? "-"
+            : FaceItStats!.Lifetime.AverageHeadshot + "%";
+
+    private string WinRateLabel =>
+        string.IsNullOrWhiteSpace(FaceItStats?.Lifetime.WinRate)
+            ? "-"
+            : FaceItStats!.Lifetime.WinRate + "%";
+
+    private string AverageKillsLabel =>
+        FaceItStats is null ? "-" : FaceItStats.Lifetime.AverageKills.ToString("0.0");
+}
