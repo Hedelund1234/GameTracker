@@ -1,0 +1,116 @@
+﻿@using GameTracker.Models.FaceItModels
+@inherits ComponentBase
+
+<div class="elo-wrapper">
+    <div class="elo-header">
+        <div class="elo-scale-label">0</div>
+        <div class="elo-scale-label">500</div>
+        <div class="elo-scale-label">1000</div>
+        <div class="elo-scale-label">1500</div>
+        <div class="elo-scale-label">2000</div>
+        <div class="elo-scale-label">2500</div>
+        <div class="elo-scale-label">3000</div>
+    </div>
+
+    <div class="elo-track" @ref="TrackRef" style="--min-elo:@MinElo; --max-elo:@MaxElo;">
+        <div class="elo-gradient"></div>
+
+        @if (ComputedMarkers.Count == 0)
+        {
+            <div class="elo-empty">Ingen spillere at vise endnu.</div>
+        }
+
+        @foreach (var m in ComputedMarkers)
+        {
+            <div class="marker" style="--elo:@m.Elo" title="@m.Tooltip">
+                <img class="avatar" src="@m.AvatarUrl" alt="@m.Nickname's avatar" loading="lazy" />
+                <div class="name">@m.Nickname</div>
+                <div class="elo-badge">@m.Elo</div>
+            </div>
+        }
+
+        @for (var i = MinElo; i <= MaxElo; i += TickStep)
+        {
+            var pct = NormalizeToPercent(i);
+            <div class="tick" style="--tick:@i"></div>
+        }
+    </div>
+
+    <div class="elo-footer">
+        <div class="range-label">@MinElo</div>
+        <div class="range-line"></div>
+        <div class="range-label">@MaxElo</div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<Player>? Players { get; set; }
+    [Parameter] public int MinElo { get; set; } = 0;
+    [Parameter] public int MaxElo { get; set; } = 3000;
+    [Parameter] public int TickStep { get; set; } = 500;
+    [Parameter] public int HeightPx { get; set; } = 110;
+    [Parameter] public string? Class { get; set; }
+
+    protected ElementReference TrackRef { get; set; }
+
+    private List<Marker> ComputedMarkers { get; } = new();
+
+    protected override void OnParametersSet()
+    {
+        ComputedMarkers.Clear();
+        if (Players == null) return;
+
+        var min = Math.Min(MinElo, MaxElo);
+        var max = Math.Max(MinElo, MaxElo);
+        var span = Math.Max(1, max - min);
+
+        foreach (var p in Players)
+        {
+            var elo = p?.Games?.CS2?.Elo ?? -1;
+            if (elo < 0) continue;
+
+            var clamped = Math.Min(Math.Max(elo, min), max);
+            var percent = NormalizeToPercent(clamped);
+
+            ComputedMarkers.Add(new Marker
+                {
+                    Elo = elo,
+                    Nickname = string.IsNullOrWhiteSpace(p?.Nickname) ? "Ukendt" : p!.Nickname,
+                    AvatarUrl = string.IsNullOrWhiteSpace(p?.Avatar)
+                      ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><rect width='100%' height='100%' fill='%239CA3AF'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' font-size='18' fill='white'>?</text></svg>"
+                      : p!.Avatar,
+                    LeftPercent = percent,
+                    Tooltip = $"{p?.Nickname ?? "Ukendt"} • ELO {elo}"
+                });
+        }
+
+        ComputedMarkers.Sort((a, b) => a.LeftPercent.CompareTo(b.LeftPercent));
+        const double minGap = 2.5;
+        for (int i = 1; i < ComputedMarkers.Count; i++)
+        {
+            if (ComputedMarkers[i].LeftPercent - ComputedMarkers[i - 1].LeftPercent < minGap)
+            {
+                ComputedMarkers[i].NameNudge = 12 * ((i % 2 == 0) ? 1 : -1);
+            }
+        }
+    }
+
+    private double NormalizeToPercent(int value)
+    {
+        var min = Math.Min(MinElo, MaxElo);
+        var max = Math.Max(MinElo, MaxElo);
+        var span = Math.Max(1, max - min);
+        var pct = (value - min) * 100.0 / span;
+        return Math.Min(100.0, Math.Max(0.0, Math.Round(pct, 2)));
+    }
+
+    private sealed class Marker
+    {
+        public int Elo { get; set; }
+        public string Nickname { get; set; } = string.Empty;
+        public string AvatarUrl { get; set; } = string.Empty;
+        public double LeftPercent { get; set; }
+        public string Tooltip { get; set; } = string.Empty;
+        public int NameNudge { get; set; } = 0;
+    }
+}
