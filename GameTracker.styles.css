@@ -1,3 +1,144 @@
+/* /Components/EloTimeLine.razor.rz.scp.css */
+/* Gray / orange theme (gray dominant) */
+:root[b-nmx9bdnuys] {
+    --elo-bg: #0f1115;
+    --elo-track: #1f232b;
+    --elo-track-edge: #2b3038;
+    --elo-text: #d1d5db;
+    --elo-muted: #9ca3af;
+    --elo-accent: #f59e0b;
+    --elo-accent-weak: #fbbf24;
+    --elo-shadow: rgba(0,0,0,.35);
+}
+
+.elo-wrapper[b-nmx9bdnuys] {
+    background: var(--elo-bg);
+    color: var(--elo-text);
+    padding: 12px 14px 16px;
+    border-radius: 16px;
+    box-shadow: 0 6px 24px var(--elo-shadow);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans";
+}
+
+.elo-header[b-nmx9bdnuys], .elo-footer[b-nmx9bdnuys] {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    font-size: 12px;
+    color: var(--elo-muted);
+    margin: 0 4px 8px;
+}
+
+.elo-footer[b-nmx9bdnuys] {
+    align-items: center;
+    grid-template-columns: auto 1fr auto;
+}
+
+.range-line[b-nmx9bdnuys] {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--elo-track-edge), transparent);
+}
+
+.range-label[b-nmx9bdnuys] {
+    font-variant-numeric: tabular-nums;
+}
+
+.elo-track[b-nmx9bdnuys] {
+    position: relative;
+    height: 110px;
+    border-radius: 999px;
+    background: var(--elo-track);
+    outline: 1px solid var(--elo-track-edge);
+    overflow: hidden;
+}
+
+.elo-gradient[b-nmx9bdnuys] {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,.02), rgba(255,255,255,.06), rgba(255,255,255,.02));
+    pointer-events: none;
+}
+
+.elo-empty[b-nmx9bdnuys] {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--elo-muted);
+    font-size: 14px;
+}
+
+.tick[b-nmx9bdnuys] {
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 36px;
+    background: var(--elo-track-edge);
+    transform: translateX(-0.5px);
+    left: calc((var(--tick) - var(--min-elo)) / (var(--max-elo) - var(--min-elo)) * 100%);
+}
+
+.marker[b-nmx9bdnuys] {
+    position: absolute;
+    top: 10px;
+    transform: translateX(-50%);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    left: calc((var(--elo) - var(--min-elo)) / (var(--max-elo) - var(--min-elo)) * 100%);
+}
+
+    .marker .avatar[b-nmx9bdnuys] {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        object-fit: cover;
+        box-shadow: 0 6px 14px var(--elo-shadow);
+        border: 2px solid var(--elo-accent);
+        background: #111;
+    }
+
+    .marker .name[b-nmx9bdnuys] {
+        max-width: 140px;
+        padding: 2px 8px;
+        font-size: 12px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid var(--elo-track-edge);
+        backdrop-filter: blur(4px);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .marker .elo-badge[b-nmx9bdnuys] {
+        position: relative;
+        top: -2px;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: rgba(245, 158, 11, 0.16);
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        color: var(--elo-accent-weak);
+    }
+
+@media (max-width: 600px) {
+    .marker .name[b-nmx9bdnuys] {
+        max-width: 90px;
+        font-size: 11px;
+    }
+
+    .marker .avatar[b-nmx9bdnuys] {
+        width: 38px;
+        height: 38px;
+    }
+
+    .tick[b-nmx9bdnuys] {
+        height: 28px;
+    }
+}
 /* /Components/FaceItPlayerOverviewComponent.razor.rz.scp.css */
 .faceit-card[b-vrfksvceuc] {
     background: #1a1a1a;

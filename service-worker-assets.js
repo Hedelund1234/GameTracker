@@ -33,7 +33,7 @@
       "url": "_framework\/icudt_no_CJK.dat"
     },
     {
-      "hash": "sha256-4zG4Q49GvKNeJw8\/q+UxEKylVOFSgz7FqUH7zp5g+Bw=",
+      "hash": "sha256-CZcz7LMU1BO1CW8+ByCny84GFn4BLaVtZQya6OiTjNs=",
       "url": "_framework\/blazor.boot.json"
     },
     {
@@ -41,11 +41,11 @@
       "url": "_framework\/Blazored.LocalStorage.wasm"
     },
     {
-      "hash": "sha256-Ze6I3\/pH8iLr8DN5opM\/mx8joRUoBjQ7XXGp034Z8\/g=",
+      "hash": "sha256-4\/7NG5WEJw30jrpIiPWibf6oztenpvFrqIT9BW9eR0g=",
       "url": "_framework\/GameTracker.wasm"
     },
     {
-      "hash": "sha256-+oiA8M0fHBFP\/Cc4jPhiK8HjfJXHV+1b\/OIVWNb2XIo=",
+      "hash": "sha256-6bw3rvs7J7l7teTMM4OE3RtC\/H68KdAxp4EHLRuwlBg=",
       "url": "_framework\/Microsoft.AspNetCore.Components.wasm"
     },
     {
@@ -153,7 +153,7 @@
       "url": "_framework\/System.Net.Primitives.wasm"
     },
     {
-      "hash": "sha256-+m9voI8P95koB2Abkj06PUi35GkSxHO41A21ksH6rqY=",
+      "hash": "sha256-jxVr6wGnrGM\/il\/aj6mAMxUg\/n3kYbpCSZ0Ejzp9wW4=",
       "url": "_framework\/System.Private.CoreLib.wasm"
     },
     {
@@ -165,7 +165,7 @@
       "url": "_framework\/System.Runtime.InteropServices.JavaScript.wasm"
     },
     {
-      "hash": "sha256-XknRp66zo2bJExqQ0KvfK5w7keL7VCTeupoWm9dk458=",
+      "hash": "sha256-KU\/0kFYtZiQ\/U+Ly+08aC0cUfFVq4cpzODGOaFTYD7o=",
       "url": "_framework\/System.Runtime.wasm"
     },
     {
@@ -185,7 +185,7 @@
       "url": "_framework\/System.Threading.wasm"
     },
     {
-      "hash": "sha256-3SZ0hXr02BcgiaGNsYLOFUQo+PN4l4bOcC4Hkm\/jEoE=",
+      "hash": "sha256-LYkRtzT3CobvDGeFPCGKrKlSGiPwFPlSM1xdnL2qZU0=",
       "url": "GameTracker.styles.css"
     },
     {
@@ -225,5 +225,5 @@
       "url": "sample-data\/weather.json"
     }
   ],
-  "version": "uo+94sgp"
+  "version": "oRfTu0kO"
 };
