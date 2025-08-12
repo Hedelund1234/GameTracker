@@ -93,6 +93,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="hud">
         <span class="pill">Våben: <b id="weapon">Pistol</b></span>
@@ -121,8 +122,53 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+
     <script>
         'use strict';
+        // ===== NET: multiplayer via SignalR =====
+        const NET = (() => {
+            // SKIFT denne til din offentlige proxy-URL bag YARP (skal være wss + /hub)
+            const HUB_URL = "https://www.hedef.dk/gamehub"; // <-- RET DENNE!
+
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl(HUB_URL, { withCredentials: false })
+                .withAutomaticReconnect([0, 1000, 3000, 5000])
+                .build();
+
+            let myId = null;
+            const others = new Map();
+            let joined = false;
+
+            async function start() {
+                connection.on("Welcome", id => { myId = id; });
+                connection.on("PlayerJoined", id => { /* valgfrit UI */ });
+                connection.on("PlayerLeft", id => { others.delete(id); });
+                connection.on("State", (id, ps) => {
+                    if (id === myId) return;        // egen state håndteres lokalt
+                    others.set(id, ps);
+                });
+
+                await connection.start();
+                await connection.invoke("Join", "default");
+                joined = true;
+                console.log("Connected to hub as", myId);
+            }
+
+            function sendInput(ax, ay, shoot, aimX, aimY) {
+                if (!joined || connection.state !== signalR.HubConnectionState.Connected) return;
+                connection.invoke("Input", {
+                    Room: "default",
+                    Ax: ax, Ay: ay, Shoot: shoot, AimX: aimX, AimY: aimY,
+                    ClientTs: performance.now() | 0
+                }).catch(() => { });
+            }
+
+            function getOthers() { return others; }
+
+            return { start, sendInput, getOthers };
+        })();
+
         // ===== DOM =====
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
@@ -290,6 +336,17 @@
                 for (const p of State.particles) { if (p.full) { const t = MathX.clamp(p.life / 160, 0, 1); ctx.save(); ctx.globalAlpha = t * 0.25; ctx.fillStyle = p.c; ctx.fillRect(0, 0, W, H); ctx.restore(); } else { ctx.save(); ctx.globalAlpha = MathX.clamp(p.life / 500, 0, 1); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); ctx.restore(); } }
                 // player
                 if (State.player.alive) { const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y; const [nx, ny] = MathX.norm(dx, dy); const head = 12, body = State.player.size; ctx.save(); ctx.translate(State.player.x, State.player.y); ctx.rotate(Math.atan2(ny, nx)); ctx.fillStyle = '#1b2a57'; ctx.fillRect(-body / 2, -body / 2, body, body); ctx.fillStyle = '#4de2cc'; ctx.fillRect(body / 2 - 2, -head / 2, head, head); ctx.fillStyle = '#e7ecf3'; ctx.fillRect(body / 2 + head - 2, -3, 16, 6); ctx.restore(); }
+                // === ANDRE SPILLERE (fra server) ===
+                if (typeof NET !== 'undefined' && NET.getOthers) {
+                    for (const [, p] of NET.getOthers()) {
+                        ctx.save();
+                        ctx.translate(p.x, p.y);
+                        ctx.fillStyle = '#9aa7ff';   // farve til medspillere
+                        const s = 22;
+                        ctx.fillRect(-s / 2, -s / 2, s, s);
+                        ctx.restore();
+                    }
+                }
                 // enemies (use type color)
                 for (const e of State.enemies) { ctx.save(); ctx.translate(e.x, e.y); ctx.fillStyle = e.color || '#ff6b6b'; ctx.fillRect(-e.size / 2, -e.size / 2, e.size, e.size); ctx.fillStyle = '#10131f'; ctx.fillRect(-4, -4, 3, 3); ctx.fillRect(1, -4, 3, 3); ctx.restore(); }
                 // bullets
@@ -311,9 +368,13 @@
                 for (let i = 0; i < 2; i++) Systems.spawnPickup();
                 HUD.update(); HUD.showOverlay('Velkommen til Box Head');
             },
-            start() { this.running = true; this.paused = false; HUD.hideOverlay(); this._acc = 0; this._last = performance.now(); requestAnimationFrame(this.loop.bind(this)); },
+            start() { this.running = true; this.paused = false; HUD.hideOverlay(); NET.start(); this._acc = 0; this._last = performance.now(); requestAnimationFrame(this.loop.bind(this)); },
             loop(ts) { if (!this.running) { return; } const frame = ts - this._last; this._last = ts; if (!this.paused) { this._acc = Math.min(this._acc + frame, 250); while (this._acc >= Config.fixedDt) { this.update(Config.fixedDt); this._acc -= Config.fixedDt; } this.render(); } requestAnimationFrame(this.loop.bind(this)); },
-            update(dt) { if (Input.mouse.down) Systems.shoot(); Systems.movePlayer(dt); Systems.moveBullets(dt); Systems.moveEnemies(dt); Systems.damageOnTouch(dt); Systems.bulletsVsEnemies(); Systems.updateParticles(dt); Systems.tryPickup(); State.spawnTimer -= dt; State.pickupTimer -= dt; if (State.spawnTimer <= 0) { const perSec = Math.min(0.5 + State.wave * 0.18, 2.0); State.spawnTimer = 1000 / perSec; Systems.spawnEnemy(); } if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) { State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax); Systems.spawnPickup(); } if (State.score > State.wave * 150) { Systems.nextWave(); } HUD.update(); },
+            update(dt) {     // Send spillerens input til serveren
+                const ax = (Input.keys.has('KeyD') ? 1 : 0) - (Input.keys.has('KeyA') ? 1 : 0);
+                const ay = (Input.keys.has('KeyS') ? 1 : 0) - (Input.keys.has('KeyW') ? 1 : 0);
+                const shoot = Input.mouse.down;
+                NET.sendInput(ax, ay, shoot, Input.mouse.x, Input.mouse.y); if (Input.mouse.down) Systems.shoot(); Systems.movePlayer(dt); Systems.moveBullets(dt); Systems.moveEnemies(dt); Systems.damageOnTouch(dt); Systems.bulletsVsEnemies(); Systems.updateParticles(dt); Systems.tryPickup(); State.spawnTimer -= dt; State.pickupTimer -= dt; if (State.spawnTimer <= 0) { const perSec = Math.min(0.5 + State.wave * 0.18, 2.0); State.spawnTimer = 1000 / perSec; Systems.spawnEnemy(); } if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) { State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax); Systems.spawnPickup(); } if (State.score > State.wave * 150) { Systems.nextWave(); } HUD.update(); },
             render() { Render.draw(); },
             gameOver() { if (!State.player.alive) return; State.player.alive = false; this.paused = false; if (State.score > State.highScore) { State.highScore = State.score; Save.highScore = State.highScore; } HUD.showOverlay(`Game Over – Score: ${State.score} (High Score: ${State.highScore})`); }
         };
