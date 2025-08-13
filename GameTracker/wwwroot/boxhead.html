@@ -325,17 +325,17 @@
                     roleHud();
                     inGame = true;
 
-                    // VIGTIGT: fjern alle overlays og unpause
+                    // fjern overlays og unpause
                     hide('menu');
                     hide('lobby');
                     Game.paused = false;
 
-                    // frisk start-tilstand
+                    // reset HP lokalt
                     State.player.hp = 100;
                     State.player.alive = true;
                     for (const [, o] of others) { o.hp = 100; o.dead = false; }
 
-                    // host forbereder banen; snapshot sendes i net-tick
+                    // host laver banen og lader net-tick sende snapshots
                     if (NET.getIsHost() && State.obstacles.length === 0) {
                         MapGen.makeOpenArena();
                         Game._sentObstacles = false;
@@ -735,7 +735,7 @@
                     else { const o = NET.getOthers().get(c.id); if (o) { o.hp = c.hp; o.dead = !c.alive; } }
                     anyAlive = anyAlive || c.alive;
                 }
-                HUDupdate(); renderLobby();
+                HUDupdate();
                 if (!anyAlive) { NET.endGame(State.score | 0); }
             },
             bulletsVsEnemies(list) {
