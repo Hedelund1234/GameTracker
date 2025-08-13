@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Box Head – Mini Shooter (Low‑bandwidth multiplayer)</title>
+    <title>Box Head – Mini Shooter</title>
     <style>
         :root {
             --bg: #0f1220;
@@ -71,7 +71,7 @@
         }
 
         .card {
-            width: min(820px,calc(100% - 24px));
+            width: min(900px,calc(100% - 24px));
             background: var(--panel);
             padding: 20px;
             border-radius: 16px;
@@ -80,7 +80,7 @@
 
         .row {
             display: flex;
-            gap: 14px;
+            gap: 10px;
             flex-wrap: wrap;
             align-items: center
         }
@@ -96,41 +96,50 @@
             outline: 2px solid var(--accent);
         }
 
-        .nameform {
-            display: flex;
-            gap: 10px;
-            margin-top: 14px;
-        }
-
-            .nameform input {
-                flex: 1;
-                padding: 10px 12px;
-                border-radius: 10px;
-                border: 1px solid rgba(255,255,255,.08);
-                background: #0b1026;
-                color: var(--ink);
-            }
-
-            .nameform button {
-                padding: 10px 14px;
-                border-radius: 10px;
-                background: var(--accent);
-                color: #012321;
-                font-weight: 800;
-                border: none;
-            }
-
-        .namehint {
+        .label {
             font-size: .9rem;
-            opacity: .8;
-            margin-top: 6px
+            opacity: .8
         }
 
-        .name {
+        .input {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,.08);
+            background: #0b1026;
+            color: var(--ink);
+        }
+
+        .stack {
+            display: grid;
+            gap: 12px;
+        }
+
+        .title {
+            margin: 0 0 6px
+        }
+
+        .nameTag {
             font: 700 14px/1 system-ui, sans-serif;
             text-align: center;
-            transform: translate(-50%, -10px);
-            pointer-events: none;
+        }
+
+        .list {
+            background: #0b1026;
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 12px;
+            padding: 10px;
+            min-width: 240px;
+            max-height: 220px;
+            overflow: auto
+        }
+
+        .dim {
+            opacity: .7
+        }
+
+        .hidden {
+            display: none !important;
         }
     </style>
 </head>
@@ -148,20 +157,42 @@
 
     <canvas id="game" width="1600" height="900"></canvas>
 
-    <!-- Startmenu med navn -->
+    <!-- Startmenu -->
     <div class="overlay" id="startOverlay">
-        <div class="card">
-            <h2 style="margin:0 0 8px">Skriv dit navn for at starte</h2>
-            <p class="namehint">Navnet vises over din karakter og deles med andre spillere i rummet.</p>
-            <div class="nameform">
-                <input id="playerName" type="text" maxlength="20" placeholder="Fx: Hedef" />
-                <button id="startBtn" disabled>Start spil</button>
+        <div class="card stack">
+            <h2 class="title">Vælg mode</h2>
+            <div class="row">
+                <label class="label" for="playerName">Navn (bruges i multiplayer):</label>
             </div>
-            <div style="margin-top:12px">
+            <div class="row">
+                <input id="playerName" class="input" type="text" maxlength="20" placeholder="Fx: Hedef" />
+            </div>
+            <div class="row">
+                <button id="spBtn" class="btn">Singleplayer</button>
+                <button id="mpBtn" class="btn">Multiplayer</button>
+            </div>
+
+            <div class="stack dim">
                 <div>Bevægelse: <span class="kbd">W</span> <span class="kbd">A</span> <span class="kbd">S</span> <span class="kbd">D</span> • Dash: <span class="kbd">Shift</span></div>
                 <div>Sigte: mus • Skyd: venstre klik / <span class="kbd">Mellemrum</span> • Pause: <span class="kbd">P</span></div>
                 <div>Våben: <span class="kbd">1</span> Pistol (∞), <span class="kbd">2</span> Shotgun, <span class="kbd">3</span> Riffel</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Lobby overlay -->
+    <div class="overlay hidden" id="lobbyOverlay">
+        <div class="card stack">
+            <h2 class="title">Lobby</h2>
+            <div class="row">
+                <div class="list" id="lobbyList"></div>
+                <div class="stack" style="min-width:240px">
+                    <div>Din rolle: <b id="lobbyRole">—</b></div>
+                    <button id="lobbyStartBtn" class="btn">Start spil (host)</button>
+                    <div id="lobbyStatus" class="dim">Venter på at host starter…</div>
+                </div>
+            </div>
+            <div class="row dim" id="inGameNotice" style="display:none">Et spil er i gang – du venter her til det er færdigt.</div>
         </div>
     </div>
 
@@ -170,12 +201,17 @@
     <script>
         'use strict';
 
-        /* ===================== Deterministisk RNG (til skud) ===================== */
+        /* ---------- Helpers ---------- */
+        function $(id) { return document.getElementById(id); }
+        function show(id) { $(id).classList.remove('hidden'); }
+        function hide(id) { $(id).classList.add('hidden'); }
+
+        /* ---------- Deterministisk RNG (skud) ---------- */
         function hash32(str) { let h = 2166136261 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
         function xorshift32(seed) { let x = seed >>> 0; return function () { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return (x >>> 0) / 4294967296; }; }
-        function detRandSym(shooterId, uid, i) { const seed = (hash32(shooterId) ^ hash32(uid) ^ (i * 0x9E3779B9)) >>> 0; const rnd = xorshift32(seed)(); return rnd * 2 - 1; }
+        function detRandSym(shooterId, uid, i) { const seed = (hash32(shooterId) ^ hash32(uid) ^ (i * 0x9E3779B9)) >>> 0; return xorshift32(seed)() * 2 - 1; }
 
-        /* ===================== NET ===================== */
+        /* ---------- NET ---------- */
         const NET = (() => {
             const HUB_URL = "https://www.hedef.dk/gamehub";
             const connection = new signalR.HubConnectionBuilder()
@@ -183,104 +219,153 @@
                 .withAutomaticReconnect([0, 1000, 3000, 5000])
                 .build();
 
-            let myId = null;
-            const others = new Map();      // id -> {x,y,tx,ty,aim,weaponIndex}
-            const names = new Map();      // id -> name
-            let isHost = false;
+            let myId = null, isHost = false, roomInGame = false;
+            const others = new Map(); // id -> {x,y,tx,ty,aim,weaponIndex}
+            const names = new Map();
+
+            // UI helpers
+            function updateRoleHud() {
+                const roleEl = $('role'), wrap = $('netrole');
+                if (roleEl) roleEl.textContent = isHost ? 'Host' : 'Client';
+                if (wrap) wrap.classList.toggle('host-pill', isHost);
+                const lobbyRole = $('lobbyRole');
+                if (lobbyRole) lobbyRole.textContent = isHost ? 'Host' : 'Client';
+                $('lobbyStartBtn').style.display = isHost ? 'inline-block' : 'none';
+            }
+            function renderLobbyList() {
+                const box = $('lobbyList'); if (!box) return;
+                box.innerHTML = '';
+                // sort by connectionId for stable order
+                const ids = Array.from(others.keys()); if (!ids.includes(myId) && myId) ids.unshift(myId);
+                ids.forEach(id => {
+                    const div = document.createElement('div');
+                    div.className = 'nameTag';
+                    div.textContent = names.get(id) || ('Spiller ' + id.slice(-4));
+                    box.appendChild(div);
+                });
+            }
 
             async function start() {
                 connection.on("Welcome", id => { myId = id; });
+                connection.on("Roster", ids => {
+                    const all = Array.from(ids || []);
+                    if (!all.includes(myId)) all.push(myId);
+                    all.sort();
+                    const newIsHost = (all[0] === myId);
+                    const changed = (newIsHost !== isHost);
+                    isHost = newIsHost; updateRoleHud();
+                    if (changed && isHost && Game.mode === 'mp') {
+                        // host udsender bane hvis ikke sendt
+                        if (!Game._sentObstacles && State.obstacles.length > 0) {
+                            sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
+                            Game._sentObstacles = true;
+                        }
+                    }
+                    renderLobbyList();
+                });
+                connection.on("PlayerJoined", id => { others.set(id, { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 }); renderLobbyList(); });
+                connection.on("PlayerLeft", id => { others.delete(id); names.delete(id); renderLobbyList(); });
 
-                connection.on("Roster", ids => decideHost(ids));
-                connection.on("PlayerJoined", id => { });
-                connection.on("PlayerLeft", id => { others.delete(id); names.delete(id); });
+                // navne
+                connection.on("NamesSnapshot", dict => {
+                    names.clear();
+                    Object.keys(dict || {}).forEach(k => names.set(k, dict[k]));
+                    renderLobbyList();
+                });
+                connection.on("PlayerNamed", (id, name) => { names.set(id, name); renderLobbyList(); });
 
-                connection.on("PlayerNamed", (id, name) => { names.set(id, name); });
-
+                // state
                 connection.on("State", (id, ps) => {
                     if (id === myId) return;
                     let o = others.get(id);
                     if (!o) { o = { x: ps.x, y: ps.y, tx: ps.x, ty: ps.y, aim: ps.aim || 0, weaponIndex: 0 }; others.set(id, o); }
                     o.tx = ps.x; o.ty = ps.y; o.aim = ps.aim || 0;
                 });
-
                 connection.on("WeaponChanged", (id, idx) => {
                     if (id === myId) return;
                     let o = others.get(id) || { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 };
                     o.weaponIndex = idx | 0; others.set(id, o);
                 });
 
+                // world
                 connection.on("Enemies", list => { if (!isHost) applyEnemies(list); });
                 connection.on("Obstacles", list => { if (!isHost) applyObstacles(list); });
 
-                // Low‑bandwidth shooting:
+                // shooting
                 connection.on("ShootRequest", (shooterId, payload) => {
                     if (!isHost) return;
                     if (ShotCache.has(payload.uid)) return;
                     ShotCache.add(payload.uid);
-                    // Host: broadcast ét ShootEvent til alle
                     connection.invoke("ShootEvent", "default", shooterId, payload).catch(() => { });
-                    // Host spawner samtidig bullets lokalt (autoritativ)
                     spawnShotFromEvent(shooterId, payload, State.bullets);
                 });
-
                 connection.on("ShootEvent", (shooterId, payload) => {
                     if (ShotCache.has(payload.uid)) return;
                     ShotCache.add(payload.uid);
-                    // Alle spawner samme bullets lokalt (clients i Remote, host i State)
                     const target = isHost ? State.bullets : Remote.bullets;
                     spawnShotFromEvent(shooterId, payload, target);
+                });
+
+                // lobby/match flow
+                connection.on("GameState", inGame => {
+                    roomInGame = !!inGame;
+                    show('lobbyOverlay');
+                    $('inGameNotice').style.display = roomInGame ? 'block' : 'none';
+                });
+                connection.on("GameStarted", () => {
+                    roomInGame = true;
+                    hide('lobbyOverlay');
+                    // host genererer bane (kun host!) hvis ikke allerede
+                    if (isHost && State.obstacles.length === 0) {
+                        MapGen.makeOpenArena();
+                        sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
+                        Game._sentObstacles = true;
+                    }
+                    Game.startMatch();
+                });
+                connection.on("GameEnded", () => {
+                    roomInGame = false;
+                    Game.endMatchToLobby();
+                    show('lobbyOverlay');
+                    $('inGameNotice').style.display = 'none';
                 });
 
                 await connection.start();
                 await connection.invoke("Join", "default");
                 updateRoleHud();
-            }
-
-            function decideHost(ids) {
-                const all = Array.from(ids || []);
-                if (!all.includes(myId)) all.push(myId);
-                all.sort();
-                const newIsHost = (all[0] === myId);
-                const changed = (newIsHost !== isHost);
-                isHost = newIsHost;
-                updateRoleHud();
-                if (changed && isHost) {
-                    // når man bliver host, udsend banen igen
-                    sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
-                }
-            }
-
-            function updateRoleHud() {
-                const roleEl = document.getElementById('role');
-                const roleWrap = document.getElementById('netrole');
-                if (roleEl) roleEl.textContent = isHost ? 'Host' : 'Client';
-                if (roleWrap) roleWrap.classList.toggle('host-pill', isHost);
+                renderLobbyList();
             }
 
             function setName(name) {
-                connection.invoke("SetName", "default", name).catch(() => { });
                 names.set(myId, name);
+                connection.invoke("SetName", "default", name).catch(() => { });
+                renderLobbyList();
+            }
+
+            function startGame() {
+                connection.invoke("StartGame", "default").catch(() => { });
+            }
+
+            function endGame() {
+                connection.invoke("EndGame", "default").catch(() => { });
             }
 
             function sendState() {
-                if (connection.state !== signalR.HubConnectionState.Connected) return;
                 const p = State.player;
                 connection.invoke("UpdateSelf", {
                     Room: "default",
-                    X: p.x, Y: p.y, VX: p.vx, VY: p.vy,
-                    Aim: State.aim || 0,
+                    X: p.x, Y: p.y, VX: p.vx, VY: p.vy, Aim: State.aim || 0,
                     ClientTs: performance.now() | 0
                 }).catch(() => { });
             }
 
             function sendEnemiesSnapshot(list) {
-                if (!isHost || connection.state !== signalR.HubConnectionState.Connected) return;
+                if (!isHost) return;
                 connection.invoke("EnemiesSnapshot", "default", list).catch(() => { });
             }
 
             function sendObstaclesSnapshot(list) {
-                if (!isHost || connection.state !== signalR.HubConnectionState.Connected) return;
+                if (!isHost) return;
                 connection.invoke("ObstaclesSnapshot", "default", list).catch(() => { });
             }
 
@@ -293,7 +378,6 @@
             }
 
             function sendShootEvent(shooterId, payload) {
-                // bruges når den skydende er host – broadcast direkte
                 connection.invoke("ShootEvent", "default", shooterId, payload).catch(() => { });
             }
 
@@ -301,26 +385,17 @@
             function getIsHost() { return isHost; }
             function getMyId() { return myId; }
             function getName(id) { return names.get(id) || ""; }
+            function isRoomInGame() { return roomInGame; }
 
-            return { start, setName, sendState, sendEnemiesSnapshot, sendObstaclesSnapshot, sendWeaponChanged, sendShootRequest, sendShootEvent, getOthers, getIsHost, getMyId, getName };
+            return { start, setName, startGame, endGame, sendState, sendEnemiesSnapshot, sendObstaclesSnapshot, sendWeaponChanged, sendShootRequest, sendShootEvent, getOthers, getIsHost, getMyId, getName, isRoomInGame };
         })();
 
-        /* ===================== DOM/STATE ===================== */
-        const canvas = document.getElementById('game');
-        const ctx = canvas.getContext('2d');
+        /* ---------- DOM & State ---------- */
+        const canvas = $('game'); const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
 
-        const nameInput = document.getElementById('playerName');
-        const startBtn = document.getElementById('startBtn');
-
         const hud = {
-            weapon: document.getElementById('weapon'),
-            ammo: document.getElementById('ammo'),
-            score: document.getElementById('score'),
-            wave: document.getElementById('wave'),
-            hp: document.getElementById('hp'),
-            startOverlay: document.getElementById('startOverlay'),
-            restartBtn: document.getElementById('restart'),
+            weapon: $('weapon'), ammo: $('ammo'), score: $('score'), wave: $('wave'), hp: $('hp')
         };
 
         const Config = Object.freeze({
@@ -344,15 +419,10 @@
             set highScore(v) { localStorage.setItem('boxhead_highscore', String(v | 0)); }
         };
 
-        const MathX = {
-            rand(a, b) { return Math.random() * (b - a) + a; },
-            clamp(v, a, b) { return Math.max(a, Math.min(b, v)); },
-            norm(x, y) { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; }
-        };
+        const MathX = { rand(a, b) { return Math.random() * (b - a) + a; }, clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }, norm(x, y) { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; } };
 
         const Input = (() => {
-            const keys = new Set();
-            const mouse = { x: W / 2, y: H / 2, down: false };
+            const keys = new Set(); const mouse = { x: W / 2, y: H / 2, down: false };
             window.addEventListener('keydown', e => {
                 if (e.code === 'KeyP') { Game.paused = !Game.paused; return; }
                 if (e.code === 'Space') { mouse.down = true; }
@@ -360,11 +430,7 @@
                 keys.add(e.code); Systems.handleWeaponKeys(e.code);
             });
             window.addEventListener('keyup', e => { if (e.code === 'Space') mouse.down = false; keys.delete(e.code); });
-            canvas.addEventListener('mousemove', e => {
-                const r = canvas.getBoundingClientRect();
-                mouse.x = (e.clientX - r.left) * (canvas.width / r.width);
-                mouse.y = (e.clientY - r.top) * (canvas.height / r.height);
-            });
+            canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (canvas.width / r.width); mouse.y = (e.clientY - r.top) * (canvas.height / r.height); });
             canvas.addEventListener('mousedown', () => mouse.down = true);
             canvas.addEventListener('mouseup', () => mouse.down = false);
             return { keys, mouse };
@@ -372,24 +438,17 @@
 
         const State = (() => {
             const player = { x: W / 2, y: H / 2, vx: 0, vy: 0, size: Config.player.size, speed: Config.player.speed, hp: Config.player.hp, alive: true };
-            const bullets = [];     // host: autoritative
-            const enemies = [];
-            const particles = [];
-            const obstacles = [];
-            const pickups = [];
-            let weaponIndex = 0;
-            const ammo = { 1: Infinity, 2: 0, 3: 0 };
+            const bullets = [], enemies = [], particles = [], obstacles = [], pickups = [];
+            let weaponIndex = 0; const ammo = { 1: Infinity, 2: 0, 3: 0 };
             let score = 0, wave = 1, spawnTimer = 0, pickupTimer = 0, lastFire = -1e9;
-            let highScore = Save.highScore;
-            let myName = "";  // eget navn
-            let aim = 0;      // egen sigtevinkel
+            let highScore = Save.highScore; let myName = ""; let aim = 0;
             return { player, bullets, enemies, particles, obstacles, pickups, weaponIndex, ammo, score, wave, spawnTimer, pickupTimer, lastFire, highScore, myName, aim };
         })();
 
         const Remote = { bullets: [] };
         const ShotCache = new Set();
 
-        /* ===================== HUD ===================== */
+        /* ---------- HUD ---------- */
         const HUD = {
             update() {
                 const w = Weapons[State.weaponIndex];
@@ -399,12 +458,10 @@
                 hud.score.textContent = State.score;
                 hud.wave.textContent = State.wave;
                 hud.hp.textContent = Math.max(0, Math.ceil(State.player.hp));
-            },
-            showOverlay() { if (hud.startOverlay) hud.startOverlay.style.display = 'grid'; },
-            hideOverlay() { if (hud.startOverlay) hud.startOverlay.style.display = 'none'; },
+            }
         };
 
-        /* ===================== Map & snapshots ===================== */
+        /* ---------- Map ---------- */
         const MapGen = {
             makeOpenArena() {
                 State.obstacles.length = 0;
@@ -419,16 +476,12 @@
                 }
             }
         };
-
         function applyEnemies(list) { State.enemies.length = 0; for (const e of list) State.enemies.push({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color, vx: 0, vy: 0 }); }
         function applyObstacles(list) { State.obstacles.length = 0; for (const o of list) State.obstacles.push({ x: o.x, y: o.y, w: o.w, h: o.h }); }
 
-        /* ===================== Systems ===================== */
+        /* ---------- Systems ---------- */
         const Systems = {
-            handleWeaponKeys(code) {
-                const map = { Digit1: 0, Digit2: 1, Digit3: 2 };
-                if (code in map) { State.weaponIndex = map[code]; NET.sendWeaponChanged(State.weaponIndex); HUD.update(); }
-            },
+            handleWeaponKeys(code) { const map = { Digit1: 0, Digit2: 1, Digit3: 2 }; if (code in map) { State.weaponIndex = map[code]; if (Game.mode === 'mp') NET.sendWeaponChanged(State.weaponIndex); HUD.update(); } },
             tryDash() {
                 const now = performance.now(); if (!Systems._dashLast) Systems._dashLast = -9999;
                 if (now - Systems._dashLast < Config.dash.cool) return;
@@ -436,31 +489,24 @@
                 if (k.has('KeyW')) dy -= 1; if (k.has('KeyS')) dy += 1; if (k.has('KeyA')) dx -= 1; if (k.has('KeyD')) dx += 1;
                 if (!dx && !dy) return; const [nx, ny] = MathX.norm(dx, dy);
                 State.player.vx += nx * Config.dash.speed; State.player.vy += ny * Config.dash.speed;
-                Systems.puff(State.player.x, State.player.y, 14, 4, 300, 'rgba(77,226,204,.75)');
-                Systems._dashLast = now;
+                Systems.puff(State.player.x, State.player.y, 14, 4, 300, 'rgba(77,226,204,.75)'); Systems._dashLast = now;
             },
             shoot() {
-                const w = Weapons[State.weaponIndex];
-                const now = performance.now(); if (now - State.lastFire < w.cd) return;
-
-                if (w.ammoCost > 0) {
-                    const slot = State.weaponIndex + 1;
-                    if (!State.ammo[slot] || State.ammo[slot] <= 0) { State.lastFire = now; return; }
-                    State.ammo[slot] -= w.ammoCost;
-                }
+                const w = Weapons[State.weaponIndex]; const now = performance.now(); if (now - State.lastFire < w.cd) return;
+                if (w.ammoCost > 0) { const slot = State.weaponIndex + 1; if (!State.ammo[slot] || State.ammo[slot] <= 0) { State.lastFire = now; return; } State.ammo[slot] -= w.ammoCost; }
                 State.lastFire = now;
-
-                const uid = (NET.getMyId() || "me") + ":" + (now | 0) + ":" + State.weaponIndex;
+                const uid = (Game.mode === 'mp' ? (NET.getMyId() || "me") : "sp") + ":" + (now | 0) + ":" + State.weaponIndex;
                 const payload = { x: State.player.x, y: State.player.y, angle: State.aim, weaponIndex: State.weaponIndex, ts: now | 0, uid };
-
-                if (NET.getIsHost()) {
-                    // Host: broadcast direkte + spawn lokalt autoritativt
-                    NET.sendShootEvent(NET.getMyId() || "", payload);
-                    // Host spawner også i State.bullets med samme event (via ShootEvent handler),
-                    // men for at undgå evt. visual lag kan vi også spawne nu (dublettes undgås via ShotCache)
-                    if (!ShotCache.has(uid)) { ShotCache.add(uid); spawnShotFromEvent(NET.getMyId() || "", payload, State.bullets); }
+                if (Game.mode === 'mp') {
+                    if (NET.getIsHost()) {
+                        NET.sendShootEvent(NET.getMyId() || "", payload);
+                        if (!ShotCache.has(uid)) { ShotCache.add(uid); spawnShotFromEvent(NET.getMyId() || "", payload, State.bullets); }
+                    } else {
+                        NET.sendShootRequest(payload);
+                    }
                 } else {
-                    NET.sendShootRequest(payload);
+                    // singleplayer: spawn lokalt i Remote (for ens kode; collisions køres mod State.enemies)
+                    spawnShotFromEvent("sp", payload, Remote.bullets);
                 }
                 HUD.update();
             },
@@ -472,31 +518,20 @@
                 State.player.x += State.player.vx; State.player.y += State.player.vy;
                 Systems.resolveAABB(State.player, State.player.size);
             },
-            moveBullets(dt) {
-                for (let i = State.bullets.length - 1; i >= 0; i--) {
-                    const b = State.bullets[i];
-                    b.x += b.vx; b.y += b.vy; b.life -= dt;
+            moveBullets(dt, list) {
+                for (let i = list.length - 1; i >= 0; i--) {
+                    const b = list[i]; b.x += b.vx; b.y += b.vy; b.life -= dt;
                     let hit = false;
-                    for (const o of State.obstacles) {
-                        if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) { hit = true; break; }
-                    }
-                    if (hit) { Systems.puff(b.x, b.y, 6, 1.1, 200, 'rgba(230,236,243,.6)'); State.bullets.splice(i, 1); continue; }
-                    if (b.x < -50 || b.y < -50 || b.x > W + 50 || b.y > H + 50 || b.life <= 0) State.bullets.splice(i, 1);
-                }
-            },
-            moveRemoteBullets(dt) {
-                for (let i = Remote.bullets.length - 1; i >= 0; i--) {
-                    const b = Remote.bullets[i];
-                    b.x += b.vx; b.y += b.vy; b.life -= dt;
-                    if (b.x < -50 || b.y < -50 || b.x > W + 50 || b.y > H + 50 || b.life <= 0) Remote.bullets.splice(i, 1);
+                    for (const o of State.obstacles) { if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) { hit = true; break; } }
+                    if (hit) { Systems.puff(b.x, b.y, 6, 1.1, 200, 'rgba(230,236,243,.6)'); list.splice(i, 1); continue; }
+                    if (b.x < -50 || b.y < -50 || b.x > W + 50 || b.y > H + 50 || b.life <= 0) list.splice(i, 1);
                 }
             },
             moveEnemies(dt) {
                 for (const e of State.enemies) {
                     const dx = State.player.x - e.x, dy = State.player.y - e.y, d = Math.hypot(dx, dy) + 1e-4;
                     const s = e.spd * (1 + Math.min(0.6, 30 / d));
-                    e.vx = (dx / d) * s; e.vy = (dy / d) * s;
-                    e.x += e.vx; e.y += e.vy;
+                    e.vx = (dx / d) * s; e.vy = (dy / d) * s; e.x += e.vx; e.y += e.vy;
                     Systems.resolveAABB(e, e.size);
                 }
             },
@@ -520,33 +555,28 @@
                 for (const e of State.enemies) {
                     if (Math.hypot(State.player.x - e.x, State.player.y - e.y) < e.size + State.player.size - 6) {
                         State.player.hp -= 10 * dt / 1000;
-                        if (State.player.hp <= 0) { Game.gameOver(); return; }
+                        if (State.player.hp <= 0) { Game.onLocalDeath(); return; }
                         if (Math.random() < 0.2) Systems.blood(State.player.x, State.player.y);
                     }
                 }
             },
-            bulletsVsEnemies() {
+            bulletsVsEnemies(list) {
                 for (let i = State.enemies.length - 1; i >= 0; i--) {
                     const e = State.enemies[i];
-                    for (let j = State.bullets.length - 1; j >= 0; j--) {
-                        const b = State.bullets[j];
+                    for (let j = list.length - 1; j >= 0; j--) {
+                        const b = list[j];
                         if (Math.hypot(b.x - e.x, b.y - e.y) < e.size) {
                             e.hp -= (b.damage || 20);
-                            if (e.hp <= 0) {
-                                Systems.puff(e.x, e.y, 18, 2.4, 500, 'rgba(255,107,107,.9)');
-                                State.enemies.splice(i, 1);
-                                State.score += 10;
-                            }
+                            if (e.hp <= 0) { Systems.puff(e.x, e.y, 18, 2.4, 500, 'rgba(255,107,107,.9)'); State.enemies.splice(i, 1); State.score += 10; }
                             if (b.pierce && b.pierce > 0) { b.pierce--; Systems.blood(e.x, e.y); }
-                            else { State.bullets.splice(j, 1); Systems.blood(e.x, e.y); }
+                            else { list.splice(j, 1); Systems.blood(e.x, e.y); }
                             break;
                         }
                     }
                 }
             },
             spawnPickup() {
-                const options = [2, 3, 3];
-                const type = options[Math.floor(Math.random() * options.length)];
+                const options = [2, 3, 3]; const type = options[Math.floor(Math.random() * options.length)];
                 const b = Config.bounds; const w = 28, h = 28;
                 for (let tries = 0; tries < 50; tries++) {
                     const x = MathX.rand(b.x + 20, b.x + b.w - w - 20), y = MathX.rand(b.y + 20, b.y + b.h - h - 20);
@@ -560,10 +590,7 @@
                 for (let i = State.pickups.length - 1; i >= 0; i--) {
                     const p = State.pickups[i];
                     if (State.player.x > p.x && State.player.x < p.x + p.w && State.player.y > p.y && State.player.y < p.y + p.h) {
-                        const w = Weapons[p.type - 1];
-                        State.ammo[p.type] = (State.ammo[p.type] || 0) + w.pickup;
-                        State.pickups.splice(i, 1);
-                        HUD.update();
+                        const w = Weapons[p.type - 1]; State.ammo[p.type] = (State.ammo[p.type] || 0) + w.pickup; State.pickups.splice(i, 1); HUD.update();
                     }
                 }
             },
@@ -573,41 +600,29 @@
                 if (edge === 1) { x = W + 20; y = MathX.rand(0, H); }
                 if (edge === 2) { x = MathX.rand(0, W); y = H + 20; }
                 if (edge === 3) { x = -20; y = MathX.rand(0, H); }
-                const typeRand = Math.random();
-                let type, size, hp, spd, color;
-                if (typeRand < 0.75) { type = 'normal'; size = MathX.rand(16, 24); hp = 10 + State.wave * 2 + MathX.rand(-2, 2); spd = 0.55 + Math.min(1.2, State.wave * 0.05) + MathX.rand(-0.08, 0.08); color = '#ff6b6b'; }
+                const r = Math.random(); let type, size, hp, spd, color;
+                if (r < 0.75) { type = 'normal'; size = MathX.rand(16, 24); hp = 10 + State.wave * 2 + MathX.rand(-2, 2); spd = 0.55 + Math.min(1.2, State.wave * 0.05) + MathX.rand(-0.08, 0.08); color = '#ff6b6b'; }
                 else { type = 'big'; size = MathX.rand(36, 44); hp = 150 + State.wave * 6 + MathX.rand(-4, 4); spd = 0.35 + Math.min(0.7, State.wave * 0.03) + MathX.rand(-0.05, 0.05); color = '#ff9f43'; }
                 State.enemies.push({ x, y, vx: 0, vy: 0, size, hp, spd, type, color });
             },
-            nextWave() {
-                State.wave++;
-                for (let i = 0; i < Math.min(Config.spawn.perWaveBase + State.wave * Config.spawn.perWaveScale, Config.spawn.maxBatch); i++) Systems.spawnEnemy();
-                State.player.hp = MathX.clamp(State.player.hp + 12, 0, 100); Systems.flash('#4de2cc');
-            },
+            nextWave() { State.wave++; for (let i = 0; i < Math.min(Config.spawn.perWaveBase + State.wave * Config.spawn.perWaveScale, Config.spawn.maxBatch); i++) Systems.spawnEnemy(); State.player.hp = MathX.clamp(State.player.hp + 12, 0, 100); Systems.flash('#4de2cc'); },
             puff(x, y, n = 12, speed = 3, life = 500, c = 'rgba(255,255,255,.8)') { for (let i = 0; i < n; i++) { const a = MathX.rand(0, Math.PI * 2), v = MathX.rand(0.5, speed); State.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, c }); } },
             blood(x, y) { Systems.puff(x, y, 16, 2.6, 700, 'rgba(255,80,80,.8)'); },
             flash(color) { State.particles.push({ x: W / 2, y: H / 2, vx: 0, vy: 0, life: 160, c: color, full: true }); },
             updateParticles(dt) { for (let i = State.particles.length - 1; i >= 0; i--) { const p = State.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= dt; if (p.life <= 0) State.particles.splice(i, 1); } }
         };
 
-        // Spawner bullets ud fra ShootEvent (bruges af alle)
-        function spawnShotFromEvent(shooterId, payload, targetList) {
-            const w = Weapons[payload.weaponIndex];
-            const baseAng = payload.angle;
+        function spawnShotFromEvent(shooterId, payload, list) {
+            const w = Weapons[payload.weaponIndex]; const baseAng = payload.angle;
             for (let i = 0; i < w.pellets; i++) {
-                const spread = w.spread * detRandSym(shooterId, payload.uid, i);
-                const ang = baseAng + spread;
+                const ang = baseAng + w.spread * detRandSym(shooterId, payload.uid, i);
                 const vx = Math.cos(ang) * w.speed, vy = Math.sin(ang) * w.speed;
-                targetList.push({
-                    x: payload.x + Math.cos(baseAng) * (State.player.size + 8),
-                    y: payload.y + Math.sin(baseAng) * (State.player.size + 8),
-                    vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce
-                });
+                list.push({ x: payload.x + Math.cos(baseAng) * (State.player.size + 8), y: payload.y + Math.sin(baseAng) * (State.player.size + 8), vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce });
             }
             Systems.puff(payload.x + Math.cos(baseAng) * 14, payload.y + Math.sin(baseAng) * 14, 6 + w.pellets, 1.2, 160, 'rgba(255,255,255,.5)');
         }
 
-        /* ===================== Render ===================== */
+        /* ---------- Render ---------- */
         const Render = {
             draw() {
                 ctx.clearRect(0, 0, W, H);
@@ -616,12 +631,11 @@
                 // bg & grid
                 ctx.save(); ctx.fillStyle = '#0a0e1b'; ctx.fillRect(0, 0, W, H);
                 ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 2; ctx.strokeRect(b.x - 10, b.y - 10, b.w + 20, b.h + 20);
-                ctx.globalAlpha = .06;
-                for (let x = b.x; x < b.x + b.w; x += 40) { ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke(); }
+                ctx.globalAlpha = .06; for (let x = b.x; x < b.x + b.w; x += 40) { ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke(); }
                 for (let y = b.y; y < b.y + b.h; y += 40) { ctx.beginPath(); ctx.moveTo(b.x, y); ctx.lineTo(b.x + b.w, y); ctx.stroke(); }
                 ctx.globalAlpha = 1; ctx.restore();
 
-                // obstacles
+                // crates
                 ctx.save(); for (const o of State.obstacles) { ctx.fillStyle = '#1e243f'; ctx.fillRect(o.x, o.y, o.w, o.h); ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.strokeRect(o.x + .5, o.y + .5, o.w - 1, o.h - 1); } ctx.restore();
 
                 // pickups
@@ -633,48 +647,32 @@
                     else { ctx.save(); ctx.globalAlpha = MathX.clamp(p.life / 500, 0, 1); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); ctx.restore(); }
                 }
 
-                // helper til at tegne spiller med våbenretning + navn
-                function drawPlayer(x, y, aim, isSelf, weaponIndex, nameText) {
-                    const head = 12, body = 22;
-                    ctx.save();
-                    ctx.translate(x, y);
-                    ctx.rotate(aim || 0);
-                    // krop
+                // Tegn spiller (Uden “stregen”/barrel)
+                function drawPlayer(x, y, aim, isSelf, nameText) {
+                    const s = 22, head = 12;
+                    ctx.save(); ctx.translate(x, y); ctx.rotate(aim || 0);
                     ctx.fillStyle = isSelf ? '#1b2a57' : '#2a335f';
-                    ctx.fillRect(-body / 2, -body / 2, body, body);
-                    // hoved
+                    ctx.fillRect(-s / 2, -s / 2, s, s);
                     ctx.fillStyle = isSelf ? '#4de2cc' : '#9aa7ff';
-                    ctx.fillRect(body / 2 - 2, -head / 2, head, head);
-                    // pistol/barrel
-                    ctx.fillStyle = '#e7ecf3';
-                    ctx.fillRect(body / 2 + head - 2, -3, 16, 6);
+                    ctx.fillRect(s / 2 - 2, -head / 2, head, head);
+                    // *** ingen barrel/dot længere ***
                     ctx.restore();
 
-                    // navn over spilleren
                     if (nameText) {
                         ctx.save();
-                        ctx.fillStyle = 'rgba(0,0,0,.45)';
-                        ctx.fillRect(x - 50, y - 36, 100, 20);
-                        ctx.fillStyle = '#e7ecf3';
-                        ctx.font = '700 14px system-ui, sans-serif';
-                        ctx.textAlign = 'center';
+                        ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x - 60, y - 38, 120, 22);
+                        ctx.fillStyle = '#e7ecf3'; ctx.font = '700 14px system-ui, sans-serif'; ctx.textAlign = 'center';
                         ctx.fillText(nameText, x, y - 22);
                         ctx.restore();
                     }
-
-                    // lille våbenprik
-                    ctx.save();
-                    ctx.fillStyle = ['#e7ecf3', '#ffb84d', '#4da6ff'][weaponIndex ?? 0] || '#e7ecf3';
-                    ctx.fillRect(x + 16, y - 3, 8, 6);
-                    ctx.restore();
                 }
 
-                // lokal spiller
-                drawPlayer(State.player.x, State.player.y, State.aim, true, State.weaponIndex, State.myName);
+                // local
+                drawPlayer(State.player.x, State.player.y, State.aim, true, State.myName);
 
-                // andre spillere (glattet position + deres aim)
-                for (const [id, p] of NET.getOthers()) {
-                    drawPlayer(p.x, p.y, p.aim || 0, false, p.weaponIndex, NET.getName(id));
+                // others
+                for (const [id, o] of NET.getOthers()) {
+                    drawPlayer(o.x, o.y, o.aim || 0, false, NET.getName(id));
                 }
 
                 // enemies
@@ -687,150 +685,166 @@
 
                 // bullets
                 ctx.save(); ctx.fillStyle = '#e7ecf3';
-                const list = NET.getIsHost() ? State.bullets : Remote.bullets;
-                for (const b2 of list) ctx.fillRect(b2.x - 2, b2.y - 2, 4, 4);
+                const bl = (Game.mode === 'mp' ? (NET.getIsHost() ? State.bullets : Remote.bullets) : Remote.bullets);
+                for (const b of bl) ctx.fillRect(b.x - 2, b.y - 2, 4, 4);
                 ctx.restore();
 
-                if (Game.paused) {
-                    ctx.save(); ctx.globalAlpha = .6; ctx.fillStyle = '#0b0f1e'; ctx.fillRect(0, 0, W, H);
-                    ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '700 36px system-ui, sans-serif';
-                    ctx.textAlign = 'center'; ctx.fillText('PAUSE', W / 2, H / 2); ctx.restore();
-                }
+                if (Game.paused) { ctx.save(); ctx.globalAlpha = .6; ctx.fillStyle = '#0b0f1e'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '700 36px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PAUSE', W / 2, H / 2); ctx.restore(); }
             }
         };
 
-        /* ===================== Game ===================== */
+        /* ---------- Game ---------- */
         const Game = {
-            running: false, paused: false, _sentObstacles: false,
-            init() {
-                MapGen.makeOpenArena();
+            mode: 'sp', running: false, paused: false, _sentObstacles: false, _loopId: 0,
+            initStartMenu() { show('startOverlay'); hide('lobbyOverlay'); $('playerName').value = ''; },
+            startSingle() {
+                this.mode = 'sp';
+                hide('startOverlay');
+                this.initMatch(true); // generate map
+                this.run();
+            },
+            async startMultiplayer() {
+                this.mode = 'mp';
+                hide('startOverlay');
+                // vis lobby
+                show('lobbyOverlay');
+                $('inGameNotice').style.display = 'none';
+                await NET.start();
+                const name = ($('playerName').value || '').trim().slice(0, 20) || ('Spiller_' + Math.random().toString(36).slice(2, 6));
+                State.myName = name;
+                NET.setName(name);
+                // i MP genererer KUN host banen – clients venter på Obstacles
+                State.obstacles.length = 0; this._sentObstacles = false;
+            },
+            startMatch() {
+                // kaldt når MP GameStarted modtages, eller i SP direkte
+                this.initMatch(this.mode === 'sp' || NET.getIsHost());
+                this.run();
+            },
+            initMatch(shouldGenerateMap) {
                 State.enemies.length = 0; State.bullets.length = 0; Remote.bullets.length = 0;
                 State.particles.length = 0; State.pickups.length = 0;
                 State.player.x = W / 2; State.player.y = H / 2; State.player.vx = 0; State.player.vy = 0; State.player.hp = Config.player.hp; State.player.alive = true;
                 State.weaponIndex = 0; State.ammo[2] = 0; State.ammo[3] = 0;
                 State.score = 0; State.wave = 1; State.spawnTimer = 0; State.pickupTimer = 0; State.lastFire = -1e9;
-                for (let i = 0; i < 2; i++) State.pickups.push({ x: Config.bounds.x + 80 + i * 60, y: Config.bounds.y + 80, w: 28, h: 28, type: i === 0 ? 2 : 3 });
-                HUD.update(); HUD.showOverlay();
-                Game._sentObstacles = false;
+                if (shouldGenerateMap) { MapGen.makeOpenArena(); }
+                if (this.mode === 'sp') { for (let i = 0; i < 2; i++) State.pickups.push({ x: Config.bounds.x + 80 + i * 60, y: Config.bounds.y + 80, w: 28, h: 28, type: i === 0 ? 2 : 3 }); }
             },
-            start(name) {
-                State.myName = name.trim().slice(0, 20);
-                NET.start().then(() => {
-                    NET.setName(State.myName);
-                });
-                this.running = true; this.paused = false; HUD.hideOverlay();
-                this._acc = 0; this._last = performance.now();
-                requestAnimationFrame(this.loop.bind(this));
+            run() {
+                this.running = true; this.paused = false;
+                let last = performance.now(), acc = 0, dt = Config.fixedDt;
 
-                // net tick (20 Hz): host sender enemies + obstacles (én gang)
-                (function netTick() {
-                    const now = performance.now();
-                    if (!netTick._last || now - netTick._last > 50) {
-                        netTick._last = now;
+                const loop = (ts) => {
+                    if (!this.running) return;
+                    const frame = ts - last; last = ts;
+                    if (!this.paused) {
+                        acc = Math.min(acc + frame, 250);
+                        while (acc >= dt) { this.update(dt); acc -= dt; }
+                        this.render();
+                    }
+                    this._loopId = requestAnimationFrame(loop);
+                };
+                cancelAnimationFrame(this._loopId);
+                this._loopId = requestAnimationFrame(loop);
+
+                // net tick 20Hz (kun MP)
+                if (this.mode === 'mp') {
+                    const tick = () => {
+                        if (!this.running) return;
                         if (NET.getIsHost()) {
                             const es = State.enemies.map(e => ({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color }));
                             NET.sendEnemiesSnapshot(es);
-                            if (!Game._sentObstacles) {
+                            if (!this._sentObstacles && State.obstacles.length > 0) {
                                 NET.sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
-                                Game._sentObstacles = true;
+                                this._sentObstacles = true;
                             }
                         }
-                    }
-                    requestAnimationFrame(netTick);
-                })();
-            },
-            loop(ts) {
-                if (!this.running) return;
-                const frame = ts - this._last; this._last = ts;
-                if (!this.paused) {
-                    this._acc = Math.min(this._acc + frame, 250);
-                    while (this._acc >= Config.fixedDt) { this.update(Config.fixedDt); this._acc -= Config.fixedDt; }
-                    this.render();
+                        setTimeout(tick, 50);
+                    };
+                    tick();
                 }
-                requestAnimationFrame(this.loop.bind(this));
             },
             update(dt) {
-                // sigtevinkel (bruges til våbenretning + sendes i UpdateSelf)
+                // aim
                 const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y;
                 State.aim = Math.atan2(dy, dx);
 
                 if (Input.mouse.down) Systems.shoot();
                 Systems.movePlayer(dt);
 
-                if (NET.getIsHost()) {
+                if (this.mode === 'mp') {
+                    if (NET.getIsHost()) {
+                        Systems.moveEnemies(dt);
+                        Systems.damageOnTouch(dt);
+                        Systems.bulletsVsEnemies(State.bullets);
+                        Systems.moveBullets(dt, State.bullets);
+                    } else {
+                        Systems.moveBullets(dt, Remote.bullets); // render only
+                    }
+                } else {
+                    // singleplayer: fuld sim lokalt (Remote.bullets bruges til rendering/logic)
                     Systems.moveEnemies(dt);
                     Systems.damageOnTouch(dt);
-                    Systems.bulletsVsEnemies();
-                    Systems.moveBullets(dt);
-                } else {
-                    Systems.moveRemoteBullets(dt);
+                    Systems.bulletsVsEnemies(Remote.bullets);
+                    Systems.moveBullets(dt, Remote.bullets);
+                    // SP: spawns/waves
+                    State.spawnTimer -= dt; State.pickupTimer -= dt;
+                    if (State.spawnTimer <= 0) { const perSec = Math.min(0.5 + State.wave * 0.18, 2.0); State.spawnTimer = 1000 / perSec; Systems.spawnEnemy(); }
+                    if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) { State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax); Systems.spawnPickup(); }
+                    if (State.score > State.wave * 150) Systems.nextWave();
                 }
 
                 Systems.updateParticles(dt);
                 Systems.tryPickup();
 
-                // spawns/waves kun på host
-                State.spawnTimer -= dt; State.pickupTimer -= dt;
-                if (NET.getIsHost()) {
-                    if (State.spawnTimer <= 0) {
-                        const perSec = Math.min(0.5 + State.wave * 0.18, 2.0);
-                        State.spawnTimer = 1000 / perSec; Systems.spawnEnemy();
-                    }
-                    if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) {
-                        State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax);
-                        Systems.spawnPickup();
-                    }
-                    if (State.score > State.wave * 150) Systems.nextWave();
-                }
+                // MP: send own state
+                if (this.mode === 'mp') NET.sendState();
 
-                // send lokal state (inkl. aim)
-                NET.sendState();
-
-                // smoothing af andre
-                for (const [, o] of NET.getOthers()) {
-                    const s = 0.18;
-                    o.x += (o.tx - o.x) * s;
-                    o.y += (o.ty - o.y) * s;
+                // smooth others
+                if (this.mode === 'mp') {
+                    for (const [, o] of NET.getOthers()) { const s = 0.18; o.x += (o.tx - o.x) * s; o.y += (o.ty - o.y) * s; }
                 }
 
                 HUD.update();
             },
             render() { Render.draw(); },
-            gameOver() {
-                if (!State.player.alive) return;
-                State.player.alive = false; this.paused = false;
-                if (State.score > State.highScore) { State.highScore = State.score; Save.highScore = State.highScore; }
-                HUD.showOverlay();
+            onLocalDeath() {
+                State.player.alive = false;
+                if (this.mode === 'mp') {
+                    // for MVP: når host dør → slut spil for alle (kan udvides til “alle døde” logik)
+                    if (NET.getIsHost()) NET.endGame();
+                } else {
+                    // singleplayer: reset til startmenu
+                    this.endMatchToMenu();
+                }
+            },
+            endMatchToLobby() {
+                this.running = false;
+                this.paused = false;
+            },
+            endMatchToMenu() {
+                this.running = false; this.paused = false; this.initStartMenu();
             }
         };
 
-        /* ===================== Wire up startmenu ===================== */
-        Game.init();
+        /* ---------- UI wiring ---------- */
+        Game.initStartMenu();
+        $('spBtn').addEventListener('click', () => Game.startSingle());
+        $('mpBtn').addEventListener('click', () => Game.startMultiplayer());
+        $('restart').addEventListener('click', () => Game.initStartMenu());
+        $('lobbyStartBtn').addEventListener('click', () => NET.startGame());
 
-        nameInput.addEventListener('input', () => {
-            startBtn.disabled = nameInput.value.trim().length === 0;
+        // navn opdateres løbende i lobby
+        $('playerName').addEventListener('change', () => {
+            const v = ($('playerName').value || '').trim().slice(0, 20);
+            if (Game.mode === 'mp' && v) NET.setName(v);
+            State.myName = v;
         });
 
-        startBtn.addEventListener('click', () => {
-            const name = nameInput.value.trim();
-            if (!name) return;
-            Game.start(name);
-        });
+        // mus/keyboard: send Enter i startmenu til SP/MP hvis ønsket (valgfrit)
 
-        document.addEventListener('keydown', (e) => {
-            if (hud.startOverlay && hud.startOverlay.style.display !== 'none') {
-                if (e.key === 'Enter' && !startBtn.disabled) startBtn.click();
-            }
-        });
-
-        if (hud.restartBtn) hud.restartBtn.addEventListener('click', () => Game.init());
-
-        /* ===================== Minimal tests ===================== */
-        (function runTests() {
-            const assert = (c, m) => { if (!c) throw new Error(m); };
-            const test = (n, f) => { try { f(); console.log('✅', n); } catch (e) { console.error('❌', n, e); } };
-            test('Default weapon = Pistol', () => assert(Weapons[0].name === 'Pistol', 'not pistol'));
-        })();
+        // minimal sanity test
+        console.log('BoxHead loaded');
     </script>
 </body>
 </html>
