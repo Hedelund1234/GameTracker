@@ -294,8 +294,18 @@
                 connection.on("RoomsSnapshot", list => { renderRoomsList(list || []); });
                 connection.on("RoomBusy", roomName => { show('joinError'); });
                 connection.on("Roster", ids => {
-                    const arr = Array.from(ids || []); if (myId && !arr.includes(myId)) arr.push(myId); arr.sort();
-                    const newIsHost = (arr[0] === myId); if (newIsHost !== isHost) { isHost = newIsHost; roleHud(); }
+                    const arr = Array.from(ids || []);
+                    if (myId && !arr.includes(myId)) arr.push(myId);
+                    arr.sort();
+                    const newIsHost = (arr[0] === myId);
+                    if (newIsHost !== isHost) { isHost = newIsHost; roleHud(); }
+                    // Synkronisér lobbyens spillerliste for ALLE klienter
+                    others.clear();
+                    for (const id of arr) {
+                        if (id !== myId) {
+                            others.set(id, { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 });
+                        }
+                    }
                     renderLobby();
                 });
                 connection.on("PlayerJoined", id => { others.set(id, { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 }); renderLobby(); });
@@ -421,6 +431,7 @@
             await NET.connectAndJoin(room, nm);
         };
         $('refreshRooms').onclick = async () => { await NET.ensureConnected(); await NET.fetchRooms(); };
+        $('startMatchBtn').onclick = () => { NET.startGame(); };
 
         /* ------------ HUD ------------ */
         function HUDupdate() { const w = Weapons[State.weaponIndex]; hud.weapon.textContent = w.name; const a = State.ammo[State.weaponIndex + 1]; hud.ammo.textContent = (a === Infinity) ? '∞' : String(a | 0); hud.score.textContent = State.score; hud.wave.textContent = State.wave; hud.hp.textContent = Math.max(0, Math.ceil(State.player.hp)); }
