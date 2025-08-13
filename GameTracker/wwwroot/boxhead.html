@@ -1123,7 +1123,11 @@
             },
 
             endToLobby() { this.running = false; this.paused = false; show('lobby'); },
-            endToMenu() { this.running = false; this.paused = false; toMenu(); }
+            endToMenu() {
+                State.inGame = false;
+                $('lastScore').textContent = String(State.score | 0);
+                show('lobby');
+            }
         };
 
         // initial: vis menu og forbered net til room-liste
