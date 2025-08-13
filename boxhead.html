@@ -376,14 +376,27 @@
                 });
 
                 connection.on("HpChanged", (targetId, hp, alive) => {
+                    const newHp = Math.max(0, hp | 0);
+
                     if (targetId === myId) {
-                        State.player.hp = Math.max(0, hp | 0);
+                        // Serverens facit
+                        State.hpServer = newHp;
+
+                        // Vis ALDRIG mere lokalt HP end serveren siger
+                        State.hpLocal = Math.min(State.hpLocal ?? newHp, newHp);
+
+                        State.player.hp = State.hpLocal;
                         State.player.alive = !!alive;
-                        if (!State.player.alive) { Input.mouse.down = false; State.player.vx = 0; State.player.vy = 0; }
+
+                        if (!State.player.alive) {
+                            Input.mouse.down = false;
+                            State.player.vx = 0; State.player.vy = 0;
+                        }
                     } else {
                         const o = others.get(targetId);
-                        if (o) { o.hp = Math.max(0, hp | 0); o.dead = !alive; }
+                        if (o) { o.hp = newHp; o.dead = !alive; }
                     }
+
                     HUDupdate(); _renderLobby();
                 });
 
@@ -528,7 +541,15 @@
             let weaponIndex = 0; const ammo = { 1: Infinity, 2: 0, 3: 0 };
             let score = 0, wave = 1, spawnTimer = 0, pickupTimer = 0, lastFire = -1e9;
             let highScore = Save.highScore; let myName = ''; let aim = 0;
-            return { player, bullets, enemies, particles, obstacles, pickups, weaponIndex, ammo, score, wave, spawnTimer, pickupTimer, lastFire, highScore, myName, aim };
+            let hpLocal = Config.player.hp;
+            let hpServer = Config.player.hp;
+
+            return {
+                player, bullets, enemies, particles, obstacles, pickups,
+                weaponIndex, ammo, score, wave, spawnTimer, pickupTimer, lastFire,
+                highScore, myName, aim,
+                hpLocal: player.hp, hpServer: player.hp
+            };
         })();
 
         const Remote = { bullets: [] };
@@ -562,7 +583,7 @@
             hud.ammo.textContent = (a === Infinity) ? '∞' : String(a | 0);
             hud.score.textContent = State.score;
             hud.wave.textContent = State.wave;
-            hud.hp.textContent = Math.max(0, Math.ceil(State.player.hp));
+            hud.hp.textContent = Math.max(0, Math.ceil((State.hpLocal ?? State.player.hp)));
         }
 
         /* ------------ Map & apply ------------ */
@@ -817,7 +838,48 @@
                 for (let i = 0; i < Math.min(Config.spawn.perWaveBase + State.wave * Config.spawn.perWaveScale, Config.spawn.maxBatch); i++) Systems.spawnEnemy();
                 State.player.hp = MathX.clamp(State.player.hp + 12, 0, 100);
                 Particles.flash('#4de2cc');
+            },
+            predictSelfDamage(dt) {
+                // Kun klienter (ikke host) i MP laver lokal skade-prediktion
+                if (!(Game.mode === 'mp' && !NET.getIsHost())) return;
+                if (State.player.alive === false) return;
+
+                const dmgPerSec = 10; // samme som på server/host
+                let overlapping = false;
+
+                for (const e of State.enemies) {
+                    if (squaresOverlap(State.player.x, State.player.y, State.player.size, e.x, e.y, e.size)) {
+                        overlapping = true; break;
+                    }
+                }
+
+                if (overlapping) {
+                    // Tæl lokalt ned (øjeblikkeligt feedback)
+                    State.hpLocal = Math.max(0, (State.hpLocal ?? State.player.hp) - dmgPerSec * dt / 1000);
+
+                    if (State.hpLocal <= 0.0001) {
+                        // Frys input lokalt for at føles rigtigt
+                        Input.mouse.down = false;
+                        State.player.vx = 0; State.player.vy = 0;
+
+                        // Kun én notifikation per død
+                        if (!Systems._downNotified) {
+                            Systems._downNotified = true;
+                            // Brug eksisterende server-metode til at melde død NU
+                            // (Server er stadig autoritativ og kan validere)
+                            NET.hpChanged(NET.getMyId(), 0, false);
+                        }
+                    }
+                }
+
+                // Synk visning: spillet må aldrig vise mere HP end serverens facit
+                const serverHp = (State.hpServer ?? State.player.hp);
+                State.hpLocal = Math.min(State.hpLocal ?? serverHp, serverHp);
+
+                // Sæt spillerens viste HP til den lokale (clamp'et) værdi
+                State.player.hp = State.hpLocal;
             }
+
         };
 
         function spawnShot(shooterId, payload, list) {
@@ -924,6 +986,9 @@
                 State.particles.length = 0; State.pickups.length = 0;
                 State.player.x = W / 2; State.player.y = H / 2; State.player.vx = 0; State.player.vy = 0;
                 State.player.hp = Config.player.hp; State.player.alive = true;
+                State.hpLocal = State.player.hp;
+                State.hpServer = State.player.hp;
+                Systems._downNotified = false; // så vi kan melde død igen i næste runde
                 State.weaponIndex = 0; State.ammo[2] = 0; State.ammo[3] = 0;
                 State.score = 0; State.wave = 1; State.spawnTimer = 0; State.pickupTimer = 0; State.lastFire = -1e9;
 
@@ -974,7 +1039,7 @@
                 const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y;
                 State.aim = Math.atan2(dy, dx);
                 if (Input.mouse.down) Systems.shoot();
-                Systems.movePlayer(dt);
+                Systems.predictSelfDamage(dt);
 
                 if (this.mode === 'mp') {
                     if (NET.getIsHost()) {
@@ -990,6 +1055,7 @@
                     } else {
                         Systems.moveBullets(dt, Remote.bullets);
                         Systems.cullRemoteBullets();
+                        Systems.predictSelfDamage(dt);
                     }
                     NET.sendState();
                     for (const [, o] of NET.getOthers()) { const s = 0.18; o.x += (o.tx - o.x) * s; o.y += (o.ty - o.y) * s; }
