@@ -303,6 +303,12 @@
                 connection.on("NamesSnapshot", dict => { names.clear(); for (const k in dict) names.set(k, dict[k]); renderLobby(); });
                 connection.on("PlayerNamed", (id, name) => { names.set(id, name); renderLobby(); });
                 connection.on("GameState", state => { inGame = !!state; });
+                connection.on("JoinAccepted", rn => {
+                    room = rn;
+                    // sæt navn først når join er accepteret
+                    connection.invoke("SetName", room, (State.myName || 'Spiller')).catch(() => { });
+                    roleHud(); renderLobby(); hide('menu'); show('lobby');
+                });
                 connection.on("GameStarted", () => { inGame = true; hide('lobby'); if (isHost && State.obstacles.length === 0) { MapGen.makeOpenArena(); sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h }))); Game._sentObstacles = true; } Game.startMatch('mp'); });
                 connection.on("GameEnded", () => { inGame = false; Game.endToLobby(); show('lobby'); });
                 connection.on("State", (id, ps) => {
@@ -323,13 +329,10 @@
 
             async function connectAndJoin(r, playerName) {
                 await ensureConnected();
-                room = r; hide('joinError');
-                await connection.invoke("Join", room); // kan returnere RoomBusy-event
-                // hvis RoomBusy blev sendt, afbryd her
-                // (UI viser fejl, og vi forbliver i menuen)
-                if (!room) return;
-                await connection.invoke("SetName", room, playerName);
-                roleHud(); renderLobby(); hide('menu'); show('lobby');
+                hide('joinError');
+                State.myName = playerName;
+                // Vi skifter først UI når server svarer med JoinAccepted
+                await connection.invoke("Join", r);
             }
 
             function setName(n) { if (!room) return; names.set(myId, n); connection.invoke("SetName", room, n).catch(() => { }); }
@@ -348,8 +351,9 @@
             function getMyId() { return myId; }
             function getName(id) { return names.get(id) || ""; }
             function getRoom() { return room; }
+            async function fetchRooms() { try { const list = await connection.invoke("GetRooms"); renderRoomsList(list || []); } catch (e) { } }
 
-            return { ensureConnected, connectAndJoin, setName, startGame, endGame, sendState, sendEnemiesSnapshot, sendObstaclesSnapshot, sendWeaponChanged, sendShootRequest, sendShootEvent, getOthers, getIsHost, getMyId, getName, getRoom };
+            return { ensureConnected, connectAndJoin, setName, startGame, endGame, sendState, sendEnemiesSnapshot, sendObstaclesSnapshot, sendWeaponChanged, sendShootRequest, sendShootEvent, getOthers, getIsHost, getMyId, getName, getRoom, fetchRooms };
         })();
 
         /* ------------ game state ------------ */
@@ -416,7 +420,7 @@
             if (!room) return;
             await NET.connectAndJoin(room, nm);
         };
-        $('refreshRooms').onclick = async () => { await NET.ensureConnected(); const list = await (await (async () => { })) || null; /* no-op to keep await chain */ };
+        $('refreshRooms').onclick = async () => { await NET.ensureConnected(); await NET.fetchRooms(); };
 
         /* ------------ HUD ------------ */
         function HUDupdate() { const w = Weapons[State.weaponIndex]; hud.weapon.textContent = w.name; const a = State.ammo[State.weaponIndex + 1]; hud.ammo.textContent = (a === Infinity) ? '∞' : String(a | 0); hud.score.textContent = State.score; hud.wave.textContent = State.wave; hud.hp.textContent = Math.max(0, Math.ceil(State.player.hp)); }
