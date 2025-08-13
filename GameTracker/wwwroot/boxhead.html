@@ -431,7 +431,16 @@
             }
 
             function setName(n) { if (!room) return; names.set(myId, n); connection.invoke("SetName", room, n).catch(() => { }); }
-            function startGame() { if (!room) return; connection.invoke("StartGame", room).catch(() => { }); }
+            function startGame() {
+                if (!room) return;
+                // Lokalt flag: denne klient ER host (knappen vises kun for lederen).
+                isHost = true;
+                $('role').textContent = 'Host';
+                $('netpill').classList.add('host-pill');
+                $('lobbyRole').textContent = 'Host';
+                $('startMatchBtn').classList.remove('hidden');
+                connection.invoke("StartGame", room).catch(() => { });
+            }
             function endGame(finalScore) { if (!room) return; connection.invoke("EndGame", room, finalScore | 0).catch(() => { }); }
 
             async function leaveRoom() {
