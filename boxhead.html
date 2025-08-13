@@ -288,10 +288,10 @@
                 snapshot.forEach(r => {
                     const row = document.createElement('div');
                     row.className = 'roomrow' + (r.inGame ? ' ingame' : '');
-                    row.innerHTML = `
-                            <div><b>${r.name}</b><div class="small">${r.count} spiller(e)</div></div>
-                            <div class="badge">${r.inGame ? 'I gang' : 'Åben'}</div>
-                        `;
+                    row.innerHTML =
+                                <div><b>${r.name}</b><div class="small">${r.count} spiller(e)</div></div>
+                                <div class="badge">${r.inGame ? 'I gang' : 'Åben'}</div>
+                        ;
                     if (!r.inGame) {
                         row.style.cursor = 'pointer';
                         row.onclick = () => { $('roomInput').value = r.name; $('joinBtn').disabled = false; };
@@ -660,7 +660,7 @@
                 Systems._dashLast = now;
             },
             shoot() {
-                if (!State.player.alive) return; 
+                if (!State.player.alive) return;
                 const w = Weapons[State.weaponIndex];
                 const now = performance.now();
                 if (now - State.lastFire < w.cd) return;
@@ -1021,118 +1021,57 @@
             mode: 'sp', running: false, paused: false, _loop: 0, _sentObstacles: false,
 
             startMatch(mode) {
-                this.mode = mode;
-                this.running = true;
-                this.paused = false;
+                this.mode = mode; this.running = true; this.paused = false;
+                State.enemies.length = 0; State.bullets.length = 0; Remote.bullets.length = 0;
+                State.particles.length = 0; State.pickups.length = 0;
+                State.player.x = W / 2; State.player.y = H / 2; State.player.vx = 0; State.player.vy = 0;
+                State.player.hp = Config.player.hp; State.player.alive = true;
+                State.weaponIndex = 0; State.ammo[2] = 0; State.ammo[3] = 0;
+                State.score = 0; State.wave = 1; State.spawnTimer = 0; State.pickupTimer = 0; State.lastFire = -1e9;
 
-                // reset state
-                State.enemies.length = 0;
-                State.bullets.length = 0;
-                Remote.bullets.length = 0;
-                State.particles.length = 0;
-                State.pickups.length = 0;
+                if (mode === 'sp') { MapGen.makeOpenArena(); }
 
-                State.player.x = W / 2;
-                State.player.y = H / 2;
-                State.player.vx = 0;
-                State.player.vy = 0;
-                State.player.hp = Config.player.hp;
-                State.player.alive = true;
-
-                State.weaponIndex = 0;
-                State.ammo[2] = 0;
-                State.ammo[3] = 0;
-
-                State.score = 0;
-                State.wave = 1;
-                State.spawnTimer = 0;
-                State.pickupTimer = 0;
-                State.lastFire = -1e9;
-
-                if (mode === 'sp') {
-                    MapGen.makeOpenArena();
-                }
-
-                // sikrer at første obstacles-snapshot bliver sendt i MP
-                this._sentObstacles = false;
-
-                // --- game loop (fejltolerant) ---
-                let last = performance.now();
-                let acc = 0;
-                const dt = Config.fixedDt;
-
+                let last = performance.now(), acc = 0, dt = Config.fixedDt;
                 const loop = (ts) => {
                     if (!this.running) return;
-                    const frame = ts - last;
-                    last = ts;
-
-                    try {
-                        if (!this.paused) {
-                            acc = Math.min(acc + frame, 250);
-                            while (acc >= dt) {
-                                try {
-                                    this.update(dt);
-                                } catch (err) {
-                                    console.error('[Game.update() error]', err);
-                                    // fortsæt – vi ønsker ikke at fryse loopen
-                                }
-                                acc -= dt;
-                            }
-                            try {
-                                Render.draw();
-                                HUDupdate();
-                            } catch (err) {
-                                console.error('[Render/HUD error]', err);
-                            }
-                        }
-                    } catch (err) {
-                        console.error('[Main loop error]', err);
-                        // selv ved fejl fortsætter vi til næste frame
+                    const frame = ts - last; last = ts;
+                    if (!this.paused) {
+                        acc = Math.min(acc + frame, 250);
+                        while (acc >= dt) { this.update(dt); acc -= dt; }
+                        Render.draw(); HUDupdate();
                     }
-
                     this._loop = requestAnimationFrame(loop);
                 };
-
                 cancelAnimationFrame(this._loop);
                 this._loop = requestAnimationFrame(loop);
 
-                // --- MP: net-tick (fejltolerant) ---
                 if (mode === 'mp') {
                     const tick = () => {
                         if (!this.running) return;
-                        try {
-                            if (NET.getIsHost()) {
-                                // send enemies snapshot
-                                const es = State.enemies.map(e => ({
-                                    x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color
-                                }));
-                                NET.sendEnemiesSnapshot(es);
+                        if (NET.getIsHost()) {
+                            const es = State.enemies.map(e => ({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color }));
+                            NET.sendEnemiesSnapshot(es);
 
-                                // send obstacles første gang der ER noget at sende
-                                if (!this._sentObstacles && State.obstacles.length > 0) {
-                                    NET.sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
-                                    this._sentObstacles = true;
-                                }
-
-                                // diff-baseret pickup snapshot (throttle)
-                                const now = performance.now() | 0;
-                                if (!tick._lastPickupsSent || now - tick._lastPickupsSent > 200) {
-                                    const ps = State.pickups.map(p => ({ x: p.x, y: p.y, w: p.w, h: p.h, type: p.type }));
-                                    const str = JSON.stringify(ps);
-                                    if (str !== tick._lastPickupsStr) {
-                                        NET.sendPickupsSnapshot(ps);
-                                        tick._lastPickupsStr = str;
-                                    }
-                                    tick._lastPickupsSent = now;
-                                }
+                            if (!this._sentObstacles && State.obstacles.length > 0) {
+                                NET.sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
+                                this._sentObstacles = true;
                             }
-                        } catch (err) {
-                            console.error('[NET tick error]', err);
+
+                            // pickups snapshot diff
+                            const now = performance.now() | 0;
+                            if (!tick._lastPickupsSent || now - tick._lastPickupsSent > 200) {
+                                const ps = State.pickups.map(p => ({ x: p.x, y: p.y, w: p.w, h: p.h, type: p.type }));
+                                const str = JSON.stringify(ps);
+                                if (str !== tick._lastPickupsStr) {
+                                    NET.sendPickupsSnapshot(ps);
+                                    tick._lastPickupsStr = str;
+                                }
+                                tick._lastPickupsSent = now;
+                            }
                         }
                         setTimeout(tick, 50);
                     };
-                    tick._lastPickupsSent = 0;
-                    tick._lastPickupsStr = "";
+                    tick._lastPickupsSent = 0; tick._lastPickupsStr = "";
                     tick();
                 }
             },
