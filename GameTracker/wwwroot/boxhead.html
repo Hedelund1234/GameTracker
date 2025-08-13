@@ -1031,6 +1031,8 @@
 
                 if (mode === 'sp') { MapGen.makeOpenArena(); }
 
+                this._sentObstacles = false;
+
                 let last = performance.now(), acc = 0, dt = Config.fixedDt;
                 const loop = (ts) => {
                     if (!this.running) return;
