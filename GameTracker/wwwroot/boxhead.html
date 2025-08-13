@@ -226,6 +226,8 @@
                 <div class="grid" style="min-width:240px">
                     <button id="startMatchBtn" class="btn hidden">Start spil (host)</button>
                     <div id="waitMsg" class="small">Venter på at host starter…</div>
+
+                    <button id="lobbyBackBtn" class="btn">Tilbage</button>
                 </div>
             </div>
         </div>
@@ -431,10 +433,8 @@
                 if (!room) return;
                 // Denne klient er host når den trykker på knappen
                 isHost = true;
-                $('role').textContent = 'Host';
-                $('netpill').classList.add('host-pill');
-                $('lobbyRole').textContent = 'Host';
-                $('startMatchBtn').classList.remove('hidden');
+                leaderId = myId;            // <- vigtigt: gør også lederId lokalt til mig
+                roleHud();                  // opdater hele HUD ift. rolle
                 connection.invoke("StartGame", room).catch(() => { });
             }
             function endGame(finalScore) { if (!room) return; connection.invoke("EndGame", room, finalScore | 0).catch(() => { }); }
@@ -474,8 +474,10 @@
 
             function getOthers() { return others; }
             function getIsHost() {
-                // Sandhedskilde = leaderId fra server + min id
-                return (leaderId && myId) ? (leaderId === myId) : isHost;
+                // Lokalt flag vinder: hvis jeg selv har markeret mig som host (klik på "Start spil"),
+                // skal jeg simulere fjender, skade osv. Ellers falder vi tilbage til serverens leaderId.
+                if (isHost) return true;
+                return (!!leaderId && !!myId && leaderId === myId);
             }
 
             function getMyId() { return myId; }
@@ -566,6 +568,11 @@
         };
         $('refreshRooms').onclick = async () => { await NET.ensureConnected(); await NET.fetchRooms(); };
         $('startMatchBtn').onclick = () => { NET.startGame(); };
+        $('lobbyBackBtn').onclick = async () => {
+            if (NET.getRoom()) { await NET.leaveRoom(); } // hvis du stod i et rum
+            toMenu();                                     // tilbage til SP/MP menuen
+        };
+
 
         /* ------------ HUD ------------ */
         function HUDupdate() {
@@ -1128,13 +1135,24 @@
             },
 
             onLocalDeath() {
-                // I MP styres dødsfald af host via HpChanged. Her gør vi kun noget i SP:
-                if (this.mode === 'sp') { State.player.alive = false; this.endToMenu(); }
+                // I MP styres dødsfald af host via HpChanged (ingen lokal afslutning her)
+                if (this.mode === 'sp') {
+                    State.player.alive = false;
+                    this.endSingleplayerToLobbyWithScore();
+                }
             },
 
             endToLobby() { this.running = false; this.paused = false; show('lobby'); },
             endToMenu() {
-                State.inGame = false;
+                this.running = false;
+                this.paused = false;
+                // "Til menu"-knappen skal ALTID sende tilbage til hovedmenuen
+                toMenu();
+            },
+
+            endSingleplayerToLobbyWithScore() {
+                this.running = false;
+                this.paused = false;
                 $('lastScore').textContent = String(State.score | 0);
                 show('lobby');
             }
