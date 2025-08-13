@@ -44,13 +44,18 @@
 
         .btn {
             cursor: pointer;
-            padding: 8px 14px;
+            padding: 10px 14px;
             border-radius: 12px;
             background: var(--accent);
             color: #012321;
-            font-weight: 700;
+            font-weight: 800;
             border: none
         }
+
+            .btn:disabled {
+                opacity: .5;
+                cursor: not-allowed
+            }
 
         canvas {
             display: block;
@@ -85,6 +90,11 @@
             align-items: center
         }
 
+        .grid {
+            display: grid;
+            gap: 12px
+        }
+
         .kbd {
             font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
             background: #0b1026;
@@ -92,13 +102,9 @@
             border-radius: 6px
         }
 
-        .host-pill {
-            outline: 2px solid var(--accent);
-        }
-
         .label {
-            font-size: .9rem;
-            opacity: .8
+            font-size: .95rem;
+            opacity: .85
         }
 
         .input {
@@ -110,69 +116,65 @@
             color: var(--ink);
         }
 
-        .stack {
-            display: grid;
-            gap: 12px;
-        }
-
-        .title {
-            margin: 0 0 6px
-        }
-
-        .nameTag {
-            font: 700 14px/1 system-ui, sans-serif;
-            text-align: center;
-        }
-
-        .list {
-            background: #0b1026;
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 12px;
-            padding: 10px;
-            min-width: 240px;
-            max-height: 220px;
-            overflow: auto
-        }
-
-        .dim {
-            opacity: .7
+        .small {
+            font-size: .9rem;
+            opacity: .8
         }
 
         .hidden {
             display: none !important;
         }
+
+        .host-pill {
+            outline: 2px solid var(--accent);
+        }
+
+        .nameplate {
+            font: 700 14px system-ui,sans-serif;
+            text-align: center;
+        }
     </style>
 </head>
 
 <body>
+    <!-- HUD -->
     <div class="hud">
         <span class="pill">Våben: <b id="weapon">Pistol</b></span>
         <span class="pill">Ammo: <b id="ammo">∞</b></span>
         <span class="pill">Score: <b id="score">0</b></span>
         <span class="pill">Wave: <b id="wave">1</b></span>
         <span class="pill">HP: <b id="hp">100</b></span>
-        <span class="pill" id="netrole">Net: <b id="role">—</b></span>
-        <button id="restart" class="btn">Genstart</button>
+        <span class="pill" id="netpill">Net: <b id="role">—</b></span>
+        <button id="restart" class="btn">Til menu</button>
     </div>
 
     <canvas id="game" width="1600" height="900"></canvas>
 
-    <!-- Startmenu -->
-    <div class="overlay" id="startOverlay">
-        <div class="card stack">
-            <h2 class="title">Vælg mode</h2>
-            <div class="row">
-                <label class="label" for="playerName">Navn (bruges i multiplayer):</label>
-            </div>
-            <div class="row">
-                <input id="playerName" class="input" type="text" maxlength="20" placeholder="Fx: Hedef" />
-            </div>
-            <div class="row">
-                <button id="spBtn" class="btn">Singleplayer</button>
-                <button id="mpBtn" class="btn">Multiplayer</button>
+    <!-- HOVEDMENU -->
+    <div class="overlay" id="menu">
+        <div class="card grid">
+            <h2 style="margin:0">Box Head</h2>
+
+            <div class="grid">
+                <div class="label">Dit navn (bruges i multiplayer):</div>
+                <div class="row"><input id="nameInput" class="input" maxlength="20" placeholder="Fx: Hedef" /></div>
             </div>
 
-            <div class="stack dim">
+            <div class="row">
+                <button id="spBtn" class="btn">Singleplayer</button>
+                <button id="mpToggle" class="btn">Multiplayer</button>
+            </div>
+
+            <div id="mpPanel" class="grid hidden" style="margin-top:6px">
+                <div class="label">Vælg/skriv rum-navn:</div>
+                <div class="row">
+                    <input id="roomInput" class="input" maxlength="24" placeholder="Fx: venner-aften" />
+                    <button id="joinBtn" class="btn" disabled>Join lobby</button>
+                </div>
+                <div class="small">Tip: Aftal et rum-navn med dine venner. Hver gruppe bruger sit eget.</div>
+            </div>
+
+            <div class="small">
                 <div>Bevægelse: <span class="kbd">W</span> <span class="kbd">A</span> <span class="kbd">S</span> <span class="kbd">D</span> • Dash: <span class="kbd">Shift</span></div>
                 <div>Sigte: mus • Skyd: venstre klik / <span class="kbd">Mellemrum</span> • Pause: <span class="kbd">P</span></div>
                 <div>Våben: <span class="kbd">1</span> Pistol (∞), <span class="kbd">2</span> Shotgun, <span class="kbd">3</span> Riffel</div>
@@ -180,38 +182,40 @@
         </div>
     </div>
 
-    <!-- Lobby overlay -->
-    <div class="overlay hidden" id="lobbyOverlay">
-        <div class="card stack">
-            <h2 class="title">Lobby</h2>
+    <!-- LOBBY -->
+    <div class="overlay hidden" id="lobby">
+        <div class="card grid">
+            <h2 style="margin:0">Lobby – <span id="roomName">—</span></h2>
+            <div>Rolle: <b id="lobbyRole">—</b></div>
             <div class="row">
-                <div class="list" id="lobbyList"></div>
-                <div class="stack" style="min-width:240px">
-                    <div>Din rolle: <b id="lobbyRole">—</b></div>
-                    <button id="lobbyStartBtn" class="btn">Start spil (host)</button>
-                    <div id="lobbyStatus" class="dim">Venter på at host starter…</div>
+                <div style="min-width:260px; max-height:240px; overflow:auto; background:#0b1026; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px;">
+                    <div class="small" style="margin-bottom:6px">Spillere i rummet:</div>
+                    <div id="lobbyList" class="grid"></div>
+                </div>
+                <div class="grid" style="min-width:240px">
+                    <button id="startMatchBtn" class="btn hidden">Start spil (host)</button>
+                    <div id="waitMsg" class="small">Venter på at host starter…</div>
+                    <div id="inGameMsg" class="small hidden">Et spil er i gang – du venter til det er færdigt.</div>
                 </div>
             </div>
-            <div class="row dim" id="inGameNotice" style="display:none">Et spil er i gang – du venter her til det er færdigt.</div>
         </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
-
     <script>
         'use strict';
 
-        /* ---------- Helpers ---------- */
-        function $(id) { return document.getElementById(id); }
-        function show(id) { $(id).classList.remove('hidden'); }
-        function hide(id) { $(id).classList.add('hidden'); }
+        /* ------------ utils ------------ */
+        const $ = (id) => document.getElementById(id);
+        const show = id => $(id).classList.remove('hidden');
+        const hide = id => $(id).classList.add('hidden');
 
-        /* ---------- Deterministisk RNG (skud) ---------- */
-        function hash32(str) { let h = 2166136261 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
-        function xorshift32(seed) { let x = seed >>> 0; return function () { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return (x >>> 0) / 4294967296; }; }
-        function detRandSym(shooterId, uid, i) { const seed = (hash32(shooterId) ^ hash32(uid) ^ (i * 0x9E3779B9)) >>> 0; return xorshift32(seed)() * 2 - 1; }
+        /* ------------ deterministic rng til skud ------------ */
+        function h32(s) { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+        function xs32(seed) { let x = seed >>> 0; return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return (x >>> 0) / 4294967296; }; }
+        function detSym(id, uid, i) { return xs32((h32(id) ^ h32(uid) ^ (i * 0x9E3779B9)) >>> 0)() * 2 - 1; }
 
-        /* ---------- NET ---------- */
+        /* ------------ NET (kun i multiplayer) ------------ */
         const NET = (() => {
             const HUB_URL = "https://www.hedef.dk/gamehub";
             const connection = new signalR.HubConnectionBuilder()
@@ -219,62 +223,66 @@
                 .withAutomaticReconnect([0, 1000, 3000, 5000])
                 .build();
 
-            let myId = null, isHost = false, roomInGame = false;
-            const others = new Map(); // id -> {x,y,tx,ty,aim,weaponIndex}
+            let myId = null, isHost = false, inGame = false, room = null;
+            const others = new Map(); // id->{x,y,tx,ty,aim,weaponIndex}
             const names = new Map();
 
-            // UI helpers
-            function updateRoleHud() {
-                const roleEl = $('role'), wrap = $('netrole');
-                if (roleEl) roleEl.textContent = isHost ? 'Host' : 'Client';
-                if (wrap) wrap.classList.toggle('host-pill', isHost);
-                const lobbyRole = $('lobbyRole');
-                if (lobbyRole) lobbyRole.textContent = isHost ? 'Host' : 'Client';
-                $('lobbyStartBtn').style.display = isHost ? 'inline-block' : 'none';
+            function roleHud() {
+                $('role').textContent = isHost ? 'Host' : 'Client';
+                $('netpill').classList.toggle('host-pill', isHost);
+                $('lobbyRole').textContent = isHost ? 'Host' : 'Client';
+                $('startMatchBtn').classList.toggle('hidden', !isHost);
             }
-            function renderLobbyList() {
-                const box = $('lobbyList'); if (!box) return;
-                box.innerHTML = '';
-                // sort by connectionId for stable order
-                const ids = Array.from(others.keys()); if (!ids.includes(myId) && myId) ids.unshift(myId);
-                ids.forEach(id => {
+            function renderLobby() {
+                $('roomName').textContent = room || '—';
+                const list = $('lobbyList'); list.innerHTML = '';
+                // Med dig selv øverst
+                const ids = new Set();
+                if (myId) ids.add(myId);
+                for (const id of others.keys()) ids.add(id);
+                for (const id of ids) {
                     const div = document.createElement('div');
-                    div.className = 'nameTag';
-                    div.textContent = names.get(id) || ('Spiller ' + id.slice(-4));
-                    box.appendChild(div);
-                });
+                    div.className = 'nameplate';
+                    div.textContent = names.get(id) || ('Spiller ' + (id || '').slice(-4));
+                    list.appendChild(div);
+                }
+                $('inGameMsg').classList.toggle('hidden', !inGame);
+                $('waitMsg').classList.toggle('hidden', inGame);
             }
 
-            async function start() {
+            function setRoom(r) { room = r; }
+
+            async function connectAndJoin(r, playerName) {
+                room = r;
+                // handlers
                 connection.on("Welcome", id => { myId = id; });
                 connection.on("Roster", ids => {
-                    const all = Array.from(ids || []);
-                    if (!all.includes(myId)) all.push(myId);
-                    all.sort();
-                    const newIsHost = (all[0] === myId);
-                    const changed = (newIsHost !== isHost);
-                    isHost = newIsHost; updateRoleHud();
-                    if (changed && isHost && Game.mode === 'mp') {
-                        // host udsender bane hvis ikke sendt
-                        if (!Game._sentObstacles && State.obstacles.length > 0) {
-                            sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
-                            Game._sentObstacles = true;
-                        }
+                    // host = laveste id i rummet
+                    const arr = Array.from(ids || []);
+                    if (myId && !arr.includes(myId)) arr.push(myId);
+                    arr.sort();
+                    const newIsHost = (arr[0] === myId);
+                    if (newIsHost !== isHost) { isHost = newIsHost; roleHud(); }
+                    renderLobby();
+                });
+                connection.on("PlayerJoined", id => { others.set(id, { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 }); renderLobby(); });
+                connection.on("PlayerLeft", id => { others.delete(id); names.delete(id); renderLobby(); });
+
+                connection.on("NamesSnapshot", dict => { names.clear(); for (const k in dict) names.set(k, dict[k]); renderLobby(); });
+                connection.on("PlayerNamed", (id, name) => { names.set(id, name); renderLobby(); });
+
+                connection.on("GameState", state => { inGame = !!state; renderLobby(); });
+                connection.on("GameStarted", () => {
+                    inGame = true; hide('lobby');
+                    if (isHost && State.obstacles.length === 0) {
+                        MapGen.makeOpenArena();
+                        sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
+                        Game._sentObstacles = true;
                     }
-                    renderLobbyList();
+                    Game.startMatch('mp');
                 });
-                connection.on("PlayerJoined", id => { others.set(id, { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 }); renderLobbyList(); });
-                connection.on("PlayerLeft", id => { others.delete(id); names.delete(id); renderLobbyList(); });
+                connection.on("GameEnded", () => { inGame = false; Game.endToLobby(); show('lobby'); renderLobby(); });
 
-                // navne
-                connection.on("NamesSnapshot", dict => {
-                    names.clear();
-                    Object.keys(dict || {}).forEach(k => names.set(k, dict[k]));
-                    renderLobbyList();
-                });
-                connection.on("PlayerNamed", (id, name) => { names.set(id, name); renderLobbyList(); });
-
-                // state
                 connection.on("State", (id, ps) => {
                     if (id === myId) return;
                     let o = others.get(id);
@@ -283,120 +291,63 @@
                 });
                 connection.on("WeaponChanged", (id, idx) => {
                     if (id === myId) return;
-                    let o = others.get(id) || { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 };
+                    const o = others.get(id) || { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0 };
                     o.weaponIndex = idx | 0; others.set(id, o);
                 });
 
-                // world
                 connection.on("Enemies", list => { if (!isHost) applyEnemies(list); });
                 connection.on("Obstacles", list => { if (!isHost) applyObstacles(list); });
 
-                // shooting
                 connection.on("ShootRequest", (shooterId, payload) => {
                     if (!isHost) return;
                     if (ShotCache.has(payload.uid)) return;
                     ShotCache.add(payload.uid);
-                    connection.invoke("ShootEvent", "default", shooterId, payload).catch(() => { });
-                    spawnShotFromEvent(shooterId, payload, State.bullets);
+                    connection.invoke("ShootEvent", room, shooterId, payload).catch(() => { });
+                    spawnShot(shooterId, payload, State.bullets);
                 });
                 connection.on("ShootEvent", (shooterId, payload) => {
                     if (ShotCache.has(payload.uid)) return;
                     ShotCache.add(payload.uid);
                     const target = isHost ? State.bullets : Remote.bullets;
-                    spawnShotFromEvent(shooterId, payload, target);
-                });
-
-                // lobby/match flow
-                connection.on("GameState", inGame => {
-                    roomInGame = !!inGame;
-                    show('lobbyOverlay');
-                    $('inGameNotice').style.display = roomInGame ? 'block' : 'none';
-                });
-                connection.on("GameStarted", () => {
-                    roomInGame = true;
-                    hide('lobbyOverlay');
-                    // host genererer bane (kun host!) hvis ikke allerede
-                    if (isHost && State.obstacles.length === 0) {
-                        MapGen.makeOpenArena();
-                        sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
-                        Game._sentObstacles = true;
-                    }
-                    Game.startMatch();
-                });
-                connection.on("GameEnded", () => {
-                    roomInGame = false;
-                    Game.endMatchToLobby();
-                    show('lobbyOverlay');
-                    $('inGameNotice').style.display = 'none';
+                    spawnShot(shooterId, payload, target);
                 });
 
                 await connection.start();
-                await connection.invoke("Join", "default");
-                updateRoleHud();
-                renderLobbyList();
+                await connection.invoke("Join", room);
+                await connection.invoke("SetName", room, playerName);
+                roleHud(); renderLobby();
+                hide('menu'); show('lobby');
             }
 
-            function setName(name) {
-                names.set(myId, name);
-                connection.invoke("SetName", "default", name).catch(() => { });
-                renderLobbyList();
-            }
-
-            function startGame() {
-                connection.invoke("StartGame", "default").catch(() => { });
-            }
-
-            function endGame() {
-                connection.invoke("EndGame", "default").catch(() => { });
-            }
+            function setName(n) { if (!room) return; names.set(myId, n); connection.invoke("SetName", room, n).catch(() => { }); }
+            function startGame() { if (!room) return; connection.invoke("StartGame", room).catch(() => { }); }
+            function endGame() { if (!room) return; connection.invoke("EndGame", room).catch(() => { }); }
 
             function sendState() {
+                if (!room) return;
                 const p = State.player;
                 connection.invoke("UpdateSelf", {
-                    Room: "default",
-                    X: p.x, Y: p.y, VX: p.vx, VY: p.vy, Aim: State.aim || 0,
-                    ClientTs: performance.now() | 0
+                    Room: room, X: p.x, Y: p.y, VX: p.vx, VY: p.vy, Aim: State.aim || 0, ClientTs: performance.now() | 0
                 }).catch(() => { });
             }
-
-            function sendEnemiesSnapshot(list) {
-                if (!isHost) return;
-                connection.invoke("EnemiesSnapshot", "default", list).catch(() => { });
-            }
-
-            function sendObstaclesSnapshot(list) {
-                if (!isHost) return;
-                connection.invoke("ObstaclesSnapshot", "default", list).catch(() => { });
-            }
-
-            function sendWeaponChanged(idx) {
-                connection.invoke("WeaponChanged", "default", idx | 0).catch(() => { });
-            }
-
-            function sendShootRequest(payload) {
-                connection.invoke("ShootRequest", "default", payload).catch(() => { });
-            }
-
-            function sendShootEvent(shooterId, payload) {
-                connection.invoke("ShootEvent", "default", shooterId, payload).catch(() => { });
-            }
+            function sendEnemiesSnapshot(list) { if (isHost && room) connection.invoke("EnemiesSnapshot", room, list).catch(() => { }); }
+            function sendObstaclesSnapshot(list) { if (isHost && room) connection.invoke("ObstaclesSnapshot", room, list).catch(() => { }); }
+            function sendWeaponChanged(idx) { if (room) connection.invoke("WeaponChanged", room, idx | 0).catch(() => { }); }
+            function sendShootRequest(payload) { if (room) connection.invoke("ShootRequest", room, payload).catch(() => { }); }
+            function sendShootEvent(shooterId, payload) { if (room) connection.invoke("ShootEvent", room, shooterId, payload).catch(() => { }); }
 
             function getOthers() { return others; }
             function getIsHost() { return isHost; }
             function getMyId() { return myId; }
             function getName(id) { return names.get(id) || ""; }
-            function isRoomInGame() { return roomInGame; }
+            function getRoom() { return room; }
 
-            return { start, setName, startGame, endGame, sendState, sendEnemiesSnapshot, sendObstaclesSnapshot, sendWeaponChanged, sendShootRequest, sendShootEvent, getOthers, getIsHost, getMyId, getName, isRoomInGame };
+            return { setRoom, connectAndJoin, setName, startGame, endGame, sendState, sendEnemiesSnapshot, sendObstaclesSnapshot, sendWeaponChanged, sendShootRequest, sendShootEvent, getOthers, getIsHost, getMyId, getName, getRoom };
         })();
 
-        /* ---------- DOM & State ---------- */
+        /* ------------ game state ------------ */
         const canvas = $('game'); const ctx = canvas.getContext('2d');
         const W = canvas.width, H = canvas.height;
-
-        const hud = {
-            weapon: $('weapon'), ammo: $('ammo'), score: $('score'), wave: $('wave'), hp: $('hp')
-        };
 
         const Config = Object.freeze({
             bounds: { x: 60, y: 60, w: W - 120, h: H - 120 },
@@ -418,6 +369,8 @@
             get highScore() { return parseInt(localStorage.getItem('boxhead_highscore')) || 0; },
             set highScore(v) { localStorage.setItem('boxhead_highscore', String(v | 0)); }
         };
+
+        const hud = { weapon: $('weapon'), ammo: $('ammo'), score: $('score'), wave: $('wave'), hp: $('hp') };
 
         const MathX = { rand(a, b) { return Math.random() * (b - a) + a; }, clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }, norm(x, y) { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; } };
 
@@ -441,27 +394,52 @@
             const bullets = [], enemies = [], particles = [], obstacles = [], pickups = [];
             let weaponIndex = 0; const ammo = { 1: Infinity, 2: 0, 3: 0 };
             let score = 0, wave = 1, spawnTimer = 0, pickupTimer = 0, lastFire = -1e9;
-            let highScore = Save.highScore; let myName = ""; let aim = 0;
+            let highScore = Save.highScore; let myName = ''; let aim = 0;
             return { player, bullets, enemies, particles, obstacles, pickups, weaponIndex, ammo, score, wave, spawnTimer, pickupTimer, lastFire, highScore, myName, aim };
         })();
 
         const Remote = { bullets: [] };
         const ShotCache = new Set();
 
-        /* ---------- HUD ---------- */
-        const HUD = {
-            update() {
-                const w = Weapons[State.weaponIndex];
-                hud.weapon.textContent = w.name;
-                const a = State.ammo[State.weaponIndex + 1];
-                hud.ammo.textContent = (a === Infinity) ? '∞' : String(a | 0);
-                hud.score.textContent = State.score;
-                hud.wave.textContent = State.wave;
-                hud.hp.textContent = Math.max(0, Math.ceil(State.player.hp));
-            }
+        /* ------------ UI (menu/lobby) ------------ */
+        function toMenu() {
+            show('menu'); hide('lobby');
+            $('roomInput').value = '';
+            $('joinBtn').disabled = true;
+        }
+        function toLobby() { hide('menu'); show('lobby'); }
+
+        $('mpToggle').onclick = () => $('mpPanel').classList.toggle('hidden');
+        $('roomInput').oninput = () => $('joinBtn').disabled = !$('roomInput').value.trim();
+        $('restart').onclick = () => { Game.endToMenu(); };
+
+        $('spBtn').onclick = () => {
+            const nm = $('nameInput').value.trim().slice(0, 20); State.myName = nm || 'Spiller';
+            hide('menu'); Game.startMatch('sp'); // fuldt offline
         };
 
-        /* ---------- Map ---------- */
+        $('joinBtn').onclick = async () => {
+            const nm = $('nameInput').value.trim().slice(0, 20) || 'Spiller';
+            const room = $('roomInput').value.trim().toLowerCase().replace(/[^a-z0-9\-_.]/g, '-').slice(0, 24);
+            if (!room) return;
+            State.myName = nm;
+            await NET.connectAndJoin(room, nm);
+        };
+
+        $('startMatchBtn').onclick = () => NET.startGame();
+
+        /* ------------ HUD ------------ */
+        function HUDupdate() {
+            const w = Weapons[State.weaponIndex];
+            hud.weapon.textContent = w.name;
+            const a = State.ammo[State.weaponIndex + 1];
+            hud.ammo.textContent = (a === Infinity) ? '∞' : String(a | 0);
+            hud.score.textContent = State.score;
+            hud.wave.textContent = State.wave;
+            hud.hp.textContent = Math.max(0, Math.ceil(State.player.hp));
+        }
+
+        /* ------------ Map ------------ */
         const MapGen = {
             makeOpenArena() {
                 State.obstacles.length = 0;
@@ -479,9 +457,9 @@
         function applyEnemies(list) { State.enemies.length = 0; for (const e of list) State.enemies.push({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color, vx: 0, vy: 0 }); }
         function applyObstacles(list) { State.obstacles.length = 0; for (const o of list) State.obstacles.push({ x: o.x, y: o.y, w: o.w, h: o.h }); }
 
-        /* ---------- Systems ---------- */
+        /* ------------ Systems ------------ */
         const Systems = {
-            handleWeaponKeys(code) { const map = { Digit1: 0, Digit2: 1, Digit3: 2 }; if (code in map) { State.weaponIndex = map[code]; if (Game.mode === 'mp') NET.sendWeaponChanged(State.weaponIndex); HUD.update(); } },
+            handleWeaponKeys(code) { const map = { Digit1: 0, Digit2: 1, Digit3: 2 }; if (code in map) { State.weaponIndex = map[code]; if (Game.mode === 'mp') NET.sendWeaponChanged(State.weaponIndex); HUDupdate(); } },
             tryDash() {
                 const now = performance.now(); if (!Systems._dashLast) Systems._dashLast = -9999;
                 if (now - Systems._dashLast < Config.dash.cool) return;
@@ -495,20 +473,21 @@
                 const w = Weapons[State.weaponIndex]; const now = performance.now(); if (now - State.lastFire < w.cd) return;
                 if (w.ammoCost > 0) { const slot = State.weaponIndex + 1; if (!State.ammo[slot] || State.ammo[slot] <= 0) { State.lastFire = now; return; } State.ammo[slot] -= w.ammoCost; }
                 State.lastFire = now;
-                const uid = (Game.mode === 'mp' ? (NET.getMyId() || "me") : "sp") + ":" + (now | 0) + ":" + State.weaponIndex;
+
+                const uid = (Game.mode === 'mp' ? (NET.getMyId() || 'me') : 'sp') + ':' + (now | 0) + ':' + State.weaponIndex;
                 const payload = { x: State.player.x, y: State.player.y, angle: State.aim, weaponIndex: State.weaponIndex, ts: now | 0, uid };
+
                 if (Game.mode === 'mp') {
                     if (NET.getIsHost()) {
                         NET.sendShootEvent(NET.getMyId() || "", payload);
-                        if (!ShotCache.has(uid)) { ShotCache.add(uid); spawnShotFromEvent(NET.getMyId() || "", payload, State.bullets); }
+                        if (!ShotCache.has(uid)) { ShotCache.add(uid); spawnShot(NET.getMyId() || "", payload, State.bullets); }
                     } else {
                         NET.sendShootRequest(payload);
                     }
                 } else {
-                    // singleplayer: spawn lokalt i Remote (for ens kode; collisions køres mod State.enemies)
-                    spawnShotFromEvent("sp", payload, Remote.bullets);
+                    spawnShot('sp', payload, Remote.bullets);  // SP lokalt
                 }
-                HUD.update();
+                HUDupdate();
             },
             movePlayer(dt) {
                 let ax = 0, ay = 0; const k = Input.keys;
@@ -521,15 +500,26 @@
             moveBullets(dt, list) {
                 for (let i = list.length - 1; i >= 0; i--) {
                     const b = list[i]; b.x += b.vx; b.y += b.vy; b.life -= dt;
-                    let hit = false;
-                    for (const o of State.obstacles) { if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) { hit = true; break; } }
+                    let hit = false; for (const o of State.obstacles) { if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) { hit = true; break; } }
                     if (hit) { Systems.puff(b.x, b.y, 6, 1.1, 200, 'rgba(230,236,243,.6)'); list.splice(i, 1); continue; }
                     if (b.x < -50 || b.y < -50 || b.x > W + 50 || b.y > H + 50 || b.life <= 0) list.splice(i, 1);
                 }
             },
+            // VÆLG NÆRMESTE SPILLER (host tager alle med; SP kun dig selv)
             moveEnemies(dt) {
+                // saml mulige mål
+                const targets = [{ x: State.player.x, y: State.player.y }];
+                if (Game.mode === 'mp') {
+                    for (const [, o] of NET.getOthers()) { targets.push({ x: o.tx ?? o.x, y: o.ty ?? o.y }); }
+                }
                 for (const e of State.enemies) {
-                    const dx = State.player.x - e.x, dy = State.player.y - e.y, d = Math.hypot(dx, dy) + 1e-4;
+                    // find nærmeste target
+                    let tx = targets[0].x, ty = targets[0].y, best = Infinity;
+                    for (const t of targets) {
+                        const d2 = (t.x - e.x) * (t.x - e.x) + (t.y - e.y) * (t.y - e.y);
+                        if (d2 < best) { best = d2; tx = t.x; ty = t.y; }
+                    }
+                    const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy) + 1e-4;
                     const s = e.spd * (1 + Math.min(0.6, 30 / d));
                     e.vx = (dx / d) * s; e.vy = (dy / d) * s; e.x += e.vx; e.y += e.vy;
                     Systems.resolveAABB(e, e.size);
@@ -590,7 +580,7 @@
                 for (let i = State.pickups.length - 1; i >= 0; i--) {
                     const p = State.pickups[i];
                     if (State.player.x > p.x && State.player.x < p.x + p.w && State.player.y > p.y && State.player.y < p.y + p.h) {
-                        const w = Weapons[p.type - 1]; State.ammo[p.type] = (State.ammo[p.type] || 0) + w.pickup; State.pickups.splice(i, 1); HUD.update();
+                        const w = Weapons[p.type - 1]; State.ammo[p.type] = (State.ammo[p.type] || 0) + w.pickup; State.pickups.splice(i, 1); HUDupdate();
                     }
                 }
             },
@@ -612,26 +602,27 @@
             updateParticles(dt) { for (let i = State.particles.length - 1; i >= 0; i--) { const p = State.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= dt; if (p.life <= 0) State.particles.splice(i, 1); } }
         };
 
-        function spawnShotFromEvent(shooterId, payload, list) {
-            const w = Weapons[payload.weaponIndex]; const baseAng = payload.angle;
+        function spawnShot(shooterId, payload, list) {
+            const w = Weapons[payload.weaponIndex]; const base = payload.angle;
             for (let i = 0; i < w.pellets; i++) {
-                const ang = baseAng + w.spread * detRandSym(shooterId, payload.uid, i);
+                const ang = base + w.spread * detSym(shooterId, payload.uid, i);
                 const vx = Math.cos(ang) * w.speed, vy = Math.sin(ang) * w.speed;
-                list.push({ x: payload.x + Math.cos(baseAng) * (State.player.size + 8), y: payload.y + Math.sin(baseAng) * (State.player.size + 8), vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce });
+                list.push({ x: payload.x + Math.cos(base) * (State.player.size + 8), y: payload.y + Math.sin(base) * (State.player.size + 8), vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce });
             }
-            Systems.puff(payload.x + Math.cos(baseAng) * 14, payload.y + Math.sin(baseAng) * 14, 6 + w.pellets, 1.2, 160, 'rgba(255,255,255,.5)');
+            Systems.puff(payload.x + Math.cos(base) * 14, payload.y + Math.sin(base) * 14, 6 + w.pellets, 1.2, 160, 'rgba(255,255,255,.5)');
         }
 
-        /* ---------- Render ---------- */
+        /* ------------ render ------------ */
         const Render = {
             draw() {
-                ctx.clearRect(0, 0, W, H);
+                const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, W, H);
                 const b = Config.bounds;
 
-                // bg & grid
+                // bg + grid
                 ctx.save(); ctx.fillStyle = '#0a0e1b'; ctx.fillRect(0, 0, W, H);
                 ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 2; ctx.strokeRect(b.x - 10, b.y - 10, b.w + 20, b.h + 20);
-                ctx.globalAlpha = .06; for (let x = b.x; x < b.x + b.w; x += 40) { ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke(); }
+                ctx.globalAlpha = .06;
+                for (let x = b.x; x < b.x + b.w; x += 40) { ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke(); }
                 for (let y = b.y; y < b.y + b.h; y += 40) { ctx.beginPath(); ctx.moveTo(b.x, y); ctx.lineTo(b.x + b.w, y); ctx.stroke(); }
                 ctx.globalAlpha = 1; ctx.restore();
 
@@ -647,32 +638,33 @@
                     else { ctx.save(); ctx.globalAlpha = MathX.clamp(p.life / 500, 0, 1); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); ctx.restore(); }
                 }
 
-                // Tegn spiller (Uden “stregen”/barrel)
-                function drawPlayer(x, y, aim, isSelf, nameText) {
+                // tegn spiller (uden “streg/barrel”)
+                function drawPlayer(x, y, aim, isSelf, name) {
                     const s = 22, head = 12;
                     ctx.save(); ctx.translate(x, y); ctx.rotate(aim || 0);
                     ctx.fillStyle = isSelf ? '#1b2a57' : '#2a335f';
                     ctx.fillRect(-s / 2, -s / 2, s, s);
                     ctx.fillStyle = isSelf ? '#4de2cc' : '#9aa7ff';
                     ctx.fillRect(s / 2 - 2, -head / 2, head, head);
-                    // *** ingen barrel/dot længere ***
                     ctx.restore();
 
-                    if (nameText) {
+                    if (name) {
                         ctx.save();
                         ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x - 60, y - 38, 120, 22);
-                        ctx.fillStyle = '#e7ecf3'; ctx.font = '700 14px system-ui, sans-serif'; ctx.textAlign = 'center';
-                        ctx.fillText(nameText, x, y - 22);
+                        ctx.fillStyle = '#e7ecf3'; ctx.font = '700 14px system-ui,sans-serif'; ctx.textAlign = 'center';
+                        ctx.fillText(name, x, y - 22);
                         ctx.restore();
                     }
                 }
 
-                // local
+                // lokal
                 drawPlayer(State.player.x, State.player.y, State.aim, true, State.myName);
 
-                // others
-                for (const [id, o] of NET.getOthers()) {
-                    drawPlayer(o.x, o.y, o.aim || 0, false, NET.getName(id));
+                // andre
+                if (Game.mode === 'mp') {
+                    for (const [id, o] of NET.getOthers()) {
+                        drawPlayer(o.x, o.y, o.aim || 0, false, NET.getName(id));
+                    }
                 }
 
                 // enemies
@@ -688,67 +680,41 @@
                 const bl = (Game.mode === 'mp' ? (NET.getIsHost() ? State.bullets : Remote.bullets) : Remote.bullets);
                 for (const b of bl) ctx.fillRect(b.x - 2, b.y - 2, 4, 4);
                 ctx.restore();
-
-                if (Game.paused) { ctx.save(); ctx.globalAlpha = .6; ctx.fillStyle = '#0b0f1e'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '700 36px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PAUSE', W / 2, H / 2); ctx.restore(); }
             }
         };
 
-        /* ---------- Game ---------- */
+        /* ------------ game ------------ */
         const Game = {
-            mode: 'sp', running: false, paused: false, _sentObstacles: false, _loopId: 0,
-            initStartMenu() { show('startOverlay'); hide('lobbyOverlay'); $('playerName').value = ''; },
-            startSingle() {
-                this.mode = 'sp';
-                hide('startOverlay');
-                this.initMatch(true); // generate map
-                this.run();
-            },
-            async startMultiplayer() {
-                this.mode = 'mp';
-                hide('startOverlay');
-                // vis lobby
-                show('lobbyOverlay');
-                $('inGameNotice').style.display = 'none';
-                await NET.start();
-                const name = ($('playerName').value || '').trim().slice(0, 20) || ('Spiller_' + Math.random().toString(36).slice(2, 6));
-                State.myName = name;
-                NET.setName(name);
-                // i MP genererer KUN host banen – clients venter på Obstacles
-                State.obstacles.length = 0; this._sentObstacles = false;
-            },
-            startMatch() {
-                // kaldt når MP GameStarted modtages, eller i SP direkte
-                this.initMatch(this.mode === 'sp' || NET.getIsHost());
-                this.run();
-            },
-            initMatch(shouldGenerateMap) {
+            mode: 'sp', running: false, paused: false, _loop: 0, _sentObstacles: false,
+
+            startMatch(mode) {
+                this.mode = mode; this.running = true; this.paused = false;
+                // init state
                 State.enemies.length = 0; State.bullets.length = 0; Remote.bullets.length = 0;
                 State.particles.length = 0; State.pickups.length = 0;
                 State.player.x = W / 2; State.player.y = H / 2; State.player.vx = 0; State.player.vy = 0; State.player.hp = Config.player.hp; State.player.alive = true;
                 State.weaponIndex = 0; State.ammo[2] = 0; State.ammo[3] = 0;
                 State.score = 0; State.wave = 1; State.spawnTimer = 0; State.pickupTimer = 0; State.lastFire = -1e9;
-                if (shouldGenerateMap) { MapGen.makeOpenArena(); }
-                if (this.mode === 'sp') { for (let i = 0; i < 2; i++) State.pickups.push({ x: Config.bounds.x + 80 + i * 60, y: Config.bounds.y + 80, w: 28, h: 28, type: i === 0 ? 2 : 3 }); }
-            },
-            run() {
-                this.running = true; this.paused = false;
-                let last = performance.now(), acc = 0, dt = Config.fixedDt;
 
+                if (mode === 'sp') { MapGen.makeOpenArena(); }
+
+                // gameloop
+                let last = performance.now(), acc = 0, dt = Config.fixedDt;
                 const loop = (ts) => {
                     if (!this.running) return;
                     const frame = ts - last; last = ts;
                     if (!this.paused) {
                         acc = Math.min(acc + frame, 250);
                         while (acc >= dt) { this.update(dt); acc -= dt; }
-                        this.render();
+                        Render.draw(); HUDupdate();
                     }
-                    this._loopId = requestAnimationFrame(loop);
+                    this._loop = requestAnimationFrame(loop);
                 };
-                cancelAnimationFrame(this._loopId);
-                this._loopId = requestAnimationFrame(loop);
+                cancelAnimationFrame(this._loop);
+                this._loop = requestAnimationFrame(loop);
 
-                // net tick 20Hz (kun MP)
-                if (this.mode === 'mp') {
+                // net tick 20Hz (kun MP, host udsender)
+                if (mode === 'mp') {
                     const tick = () => {
                         if (!this.running) return;
                         if (NET.getIsHost()) {
@@ -764,8 +730,9 @@
                     tick();
                 }
             },
+
             update(dt) {
-                // aim
+                // sigte
                 const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y;
                 State.aim = Math.atan2(dy, dx);
 
@@ -778,73 +745,53 @@
                         Systems.damageOnTouch(dt);
                         Systems.bulletsVsEnemies(State.bullets);
                         Systems.moveBullets(dt, State.bullets);
+                        // spawns/waves kun host
+                        State.spawnTimer -= dt; State.pickupTimer -= dt;
+                        if (State.spawnTimer <= 0) { const perSec = Math.min(0.5 + State.wave * 0.18, 2.0); State.spawnTimer = 1000 / perSec; Systems.spawnEnemy(); }
+                        if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) { State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax); Systems.spawnPickup(); }
+                        if (State.score > State.wave * 150) Systems.nextWave();
                     } else {
-                        Systems.moveBullets(dt, Remote.bullets); // render only
+                        Systems.moveBullets(dt, Remote.bullets); // visuelle kugler for clients
                     }
+                    NET.sendState();
+                    // smooth others
+                    for (const [, o] of NET.getOthers()) { const s = 0.18; o.x += (o.tx - o.x) * s; o.y += (o.ty - o.y) * s; }
                 } else {
-                    // singleplayer: fuld sim lokalt (Remote.bullets bruges til rendering/logic)
+                    // singleplayer fuld sim lokalt
                     Systems.moveEnemies(dt);
                     Systems.damageOnTouch(dt);
                     Systems.bulletsVsEnemies(Remote.bullets);
                     Systems.moveBullets(dt, Remote.bullets);
-                    // SP: spawns/waves
                     State.spawnTimer -= dt; State.pickupTimer -= dt;
                     if (State.spawnTimer <= 0) { const perSec = Math.min(0.5 + State.wave * 0.18, 2.0); State.spawnTimer = 1000 / perSec; Systems.spawnEnemy(); }
                     if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) { State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax); Systems.spawnPickup(); }
                     if (State.score > State.wave * 150) Systems.nextWave();
                 }
-
-                Systems.updateParticles(dt);
-                Systems.tryPickup();
-
-                // MP: send own state
-                if (this.mode === 'mp') NET.sendState();
-
-                // smooth others
-                if (this.mode === 'mp') {
-                    for (const [, o] of NET.getOthers()) { const s = 0.18; o.x += (o.tx - o.x) * s; o.y += (o.ty - o.y) * s; }
-                }
-
-                HUD.update();
             },
-            render() { Render.draw(); },
+
             onLocalDeath() {
                 State.player.alive = false;
                 if (this.mode === 'mp') {
-                    // for MVP: når host dør → slut spil for alle (kan udvides til “alle døde” logik)
+                    // simpelt: når host dør ⇒ slut for alle (kan udvides til “alle døde”)
                     if (NET.getIsHost()) NET.endGame();
                 } else {
-                    // singleplayer: reset til startmenu
-                    this.endMatchToMenu();
+                    this.endToMenu();
                 }
             },
-            endMatchToLobby() {
-                this.running = false;
-                this.paused = false;
+
+            endToLobby() {
+                this.running = false; this.paused = false;
+                show('lobby');
             },
-            endMatchToMenu() {
-                this.running = false; this.paused = false; this.initStartMenu();
+
+            endToMenu() {
+                this.running = false; this.paused = false;
+                toMenu();
             }
         };
 
-        /* ---------- UI wiring ---------- */
-        Game.initStartMenu();
-        $('spBtn').addEventListener('click', () => Game.startSingle());
-        $('mpBtn').addEventListener('click', () => Game.startMultiplayer());
-        $('restart').addEventListener('click', () => Game.initStartMenu());
-        $('lobbyStartBtn').addEventListener('click', () => NET.startGame());
-
-        // navn opdateres løbende i lobby
-        $('playerName').addEventListener('change', () => {
-            const v = ($('playerName').value || '').trim().slice(0, 20);
-            if (Game.mode === 'mp' && v) NET.setName(v);
-            State.myName = v;
-        });
-
-        // mus/keyboard: send Enter i startmenu til SP/MP hvis ønsket (valgfrit)
-
-        // minimal sanity test
-        console.log('BoxHead loaded');
+        // initial: vis menu
+        toMenu();
     </script>
 </body>
 </html>
