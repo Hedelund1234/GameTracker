@@ -33,7 +33,7 @@
       "url": "_framework\/icudt_no_CJK.dat"
     },
     {
-      "hash": "sha256-XRDnc9uXLtIbe94Rw\/b\/59PccXGr57IzjtHwlR+ZQqY=",
+      "hash": "sha256-97SHpXKkHvSOLsp2+8HaG0U3eC0goW0cEYdUZvcNJT8=",
       "url": "_framework\/blazor.boot.json"
     },
     {
@@ -41,7 +41,7 @@
       "url": "_framework\/Blazored.LocalStorage.wasm"
     },
     {
-      "hash": "sha256-7oPTA\/62wtsX\/P9xEEyh3G6alFjSygh03AjvDdkwBzA=",
+      "hash": "sha256-z\/kADQh3k+AgcwWHWzg9E1XN7\/osiuwao+uWZlgZ9Ys=",
       "url": "_framework\/GameTracker.wasm"
     },
     {
@@ -189,7 +189,7 @@
       "url": "GameTracker.styles.css"
     },
     {
-      "hash": "sha256-NWAhQovG6BYTXJrOXKh3WvWAgV56rwd0LeVBTI7PGbU=",
+      "hash": "sha256-7m5cF9VpYGXDqDaiG3QSbm9GCsMUA4WjmysLp3xqa1U=",
       "url": "boxhead.html"
     },
     {
@@ -229,5 +229,5 @@
       "url": "sample-data\/weather.json"
     }
   ],
-  "version": "wc5T8tKR"
+  "version": "Pr8bkfRq"
 };
