@@ -341,8 +341,8 @@
                     inGame = true; hide('lobby');
                     if (isHost && State.obstacles.length === 0) {
                         MapGen.makeOpenArena();
-                        sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
-                        Game._sentObstacles = true;
+                        // Lad tick-loopet sende snapshot’et første gang efter spillet starter:
+                        Game._sentObstacles = false;
                     }
                     // reset hp/alive
                     State.player.hp = 100; State.player.alive = true;
@@ -806,6 +806,10 @@
                     anyAlive = anyAlive || c.alive;
                 }
 
+                // 🔧 NYT: Sørg for at HUD'en (HP i topbaren) og lobby-listen opdateres på hosten
+                HUDupdate();
+                renderLobby();
+
                 if (!anyAlive) {
                     // først når ALLE er døde, stopper kampen
                     NET.endGame(State.score | 0);
@@ -1026,6 +1030,8 @@
                 State.score = 0; State.wave = 1; State.spawnTimer = 0; State.pickupTimer = 0; State.lastFire = -1e9;
 
                 if (mode === 'sp') { MapGen.makeOpenArena(); }
+
+                this._sentObstacles = false;
 
                 let last = performance.now(), acc = 0, dt = Config.fixedDt;
                 const loop = (ts) => {
