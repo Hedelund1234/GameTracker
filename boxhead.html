@@ -300,7 +300,6 @@
 
             async function ensureConnected() {
                 if (connected) return;
-                // basic
                 connection.on("Welcome", id => { myId = id; });
                 connection.on("RoomsSnapshot", list => { renderRoomsList(list || []); });
                 connection.on("RoomBusy", roomName => { show('joinError'); });
@@ -308,7 +307,6 @@
                 // Roster: (ids, leaderId)
                 connection.on("Roster", (ids, leadId) => {
                     leaderId = leadId || null;
-                    // sync liste
                     const prev = new Map(others);
                     others.clear();
                     const arr = Array.from(ids || []);
@@ -793,7 +791,7 @@
                 }
             },
             spawnPickup() {
-                const options = [2, 3, 3]; // lidt oftere rifle
+                const options = [2, 3, 3];
                 const type = options[Math.floor(Math.random() * options.length)];
                 const b = Config.bounds; const w = 28, h = 28;
                 for (let tries = 0; tries < 50; tries++) {
@@ -1066,15 +1064,11 @@
                 } else {
                     // Singleplayer
                     Systems.moveEnemies(dt);
-                    // lokal skade på spilleren
-                    if (Math.random() < 1) { // bare for konsistens, genbrug gammel funktionalitet
-                        // simple touch dmg til singleplayer:
-                        for (const e of State.enemies) {
-                            if (Math.hypot(State.player.x - e.x, State.player.y - e.y) < e.size + State.player.size - 6) {
-                                State.player.hp -= 10 * dt / 1000;
-                                if (State.player.hp <= 0) { this.onLocalDeath(); break; }
-                                if (Math.random() < 0.2) Particles.puff(State.player.x, State.player.y, 12, 2.0, 500, 'rgba(255,80,80,1)');
-                            }
+                    // lokal touch-dmg på spilleren
+                    for (const e of State.enemies) {
+                        if (Math.hypot(State.player.x - e.x, State.player.y - e.y) < e.size + State.player.size - 6) {
+                            State.player.hp -= 10 * dt / 1000;
+                            if (State.player.hp <= 0) { this.onLocalDeath(); break; }
                         }
                     }
                     Systems.bulletsVsEnemies(Remote.bullets);
