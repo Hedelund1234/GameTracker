@@ -344,6 +344,13 @@
                     Game.startMatch('mp');
                 });
 
+                connection.on("GameEnded", (finalScore) => {
+                    inGame = false;
+                    Game.endToLobby();
+                    $('lastScore').textContent = String(finalScore | 0);
+                    show('lobby');
+                });
+
 
                 connection.on("State", (id, ps) => {
                     if (id === myId) return;
@@ -602,6 +609,12 @@
         };
 
         /* ------------ Systems ------------ */
+        function squaresOverlap(ax, ay, aSize, bx, by, bSize) {
+            const ah = aSize / 2, bh = bSize / 2;
+            return Math.abs(ax - bx) < (ah + bh) && Math.abs(ay - by) < (ah + bh);
+        }
+
+
         const Systems = {
             handleWeaponKeys(code) {
                 const map = { Digit1: 0, Digit2: 1, Digit3: 2 };
@@ -722,7 +735,7 @@
                 for (const e of State.enemies) {
                     for (const c of candidates) {
                         if (!c.alive) continue;
-                        if (Math.hypot(c.x - e.x, c.y - e.y) < e.size + State.player.size - 6) {
+                        if (squaresOverlap(c.x, c.y, State.player.size, e.x, e.y, e.size)) {
                             c.hp -= dmgPerSec * dt / 1000;
                             if (c.hp <= 0 && c.alive) { c.hp = 0; c.alive = false; NET.hpChanged(c.id, 0, false); }
                             else { NET.hpChanged(c.id, Math.ceil(Math.max(0, c.hp)), c.alive); }
@@ -983,7 +996,7 @@
                 } else {
                     Systems.moveEnemies(dt);
                     for (const e of State.enemies) {
-                        if (Math.hypot(State.player.x - e.x, State.player.y - e.y) < e.size + State.player.size - 6) {
+                        if (squaresOverlap(State.player.x, State.player.y, State.player.size, e.x, e.y, e.size)) {
                             State.player.hp -= 10 * dt / 1000;
                             if (State.player.hp <= 0) { this.onLocalDeath(); break; }
                         }
