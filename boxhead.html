@@ -386,17 +386,13 @@
                         State.player.alive = !!alive;
 
                         if (!State.player.alive) {
-                            // NYT: Stop alt input når man dør
-                            Input.mouse.down = false;          // Stop skydning
-                            State.player.vx = 0;               // Stop bevægelse
-                            State.player.vy = 0;
+                            // stop input når man er død (man kan stadig se kampen)
+                            Input.mouse.down = false;
+                            State.player.vx = 0; State.player.vy = 0;
                         }
                     } else {
                         const o = others.get(targetId);
-                        if (o) {
-                            o.hp = Math.max(0, hp | 0);
-                            o.dead = !alive;
-                        }
+                        if (o) { o.hp = Math.max(0, hp | 0); o.dead = !alive; }
                     }
                     HUDupdate();
                     renderLobby();
@@ -433,7 +429,7 @@
             function setName(n) { if (!room) return; names.set(myId, n); connection.invoke("SetName", room, n).catch(() => { }); }
             function startGame() {
                 if (!room) return;
-                // Lokalt flag: denne klient ER host (knappen vises kun for lederen).
+                // Denne klient er host når den trykker på knappen
                 isHost = true;
                 $('role').textContent = 'Host';
                 $('netpill').classList.add('host-pill');
@@ -755,21 +751,35 @@
                 if (!(Game.mode === 'mp' && NET.getIsHost())) return;
 
                 const candidates = [];
-                candidates.push({ id: NET.getMyId() || 'me', x: State.player.x, y: State.player.y, hp: State.player.hp, alive: State.player.alive, self: true });
+                // host selv
+                candidates.push({
+                    id: NET.getMyId() || 'me',
+                    x: State.player.x, y: State.player.y,
+                    hp: State.player.hp, alive: State.player.alive, self: true
+                });
+                // alle andre
                 for (const [id, o] of NET.getOthers()) {
-                    candidates.push({ id, x: o.tx ?? o.x, y: o.ty ?? o.y, hp: o.hp ?? 100, alive: !o.dead, self: false });
+                    candidates.push({
+                        id,
+                        x: (o.tx ?? o.x), y: (o.ty ?? o.y),
+                        hp: (o.hp ?? 100),
+                        alive: !o.dead,
+                        self: false
+                    });
                 }
 
                 const dmgPerSec = 10;
 
+                // kontakt-skade
                 for (const e of State.enemies) {
                     for (const c of candidates) {
                         if (!c.alive) continue;
                         if (Math.hypot(c.x - e.x, c.y - e.y) < e.size + State.player.size - 6) {
                             c.hp -= dmgPerSec * dt / 1000;
+
                             if (c.hp <= 0 && c.alive) {
                                 c.hp = 0; c.alive = false;
-                                NET.hpChanged(c.id, 0, false);
+                                NET.hpChanged(c.id, 0, false);      // broadcast død
                             } else {
                                 NET.hpChanged(c.id, Math.ceil(Math.max(0, c.hp)), c.alive);
                             }
@@ -777,7 +787,7 @@
                     }
                 }
 
-                // skriv tilbage til hosts lokale model
+                // opdatér hosts lokale spejl og check om nogen lever
                 let anyAlive = false;
                 for (const c of candidates) {
                     if (c.self) {
@@ -790,7 +800,7 @@
                 }
 
                 if (!anyAlive) {
-                    // GAME OVER for hele holdet – send endGame med score
+                    // først når ALLE er døde, stopper kampen
                     NET.endGame(State.score | 0);
                 }
             },
