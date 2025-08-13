@@ -133,10 +133,9 @@
     <script>
         'use strict';
 
-        // ===== NET: multiplayer via SignalR (client-authoritative player state, host-synced enemies) =====
+        // ===== NET: multiplayer via SignalR (client-authoritative players, host-synced world) =====
         const NET = (() => {
-            // SKIFT denne til din offentlige proxy-URL bag YARP (skal være wss + /hub). SignalR vælger selv ws/https.
-            const HUB_URL = "https://www.hedef.dk/gamehub";
+            const HUB_URL = "https://www.hedef.dk/gamehub"; // gennem YARP
 
             const connection = new signalR.HubConnectionBuilder()
                 .withUrl(HUB_URL, { withCredentials: false })
@@ -144,27 +143,48 @@
                 .build();
 
             let myId = null;
-            const others = new Map(); // id -> {x,y, tx,ty}
+            const others = new Map(); // id -> {x,y, tx,ty, weaponIndex?}
             let isHost = false;
 
             async function start() {
                 connection.on("Welcome", id => { myId = id; });
-                connection.on("PlayerJoined", id => { /* evt. UI */ });
+
+                connection.on("PlayerJoined", id => { /* valgfri UI */ });
                 connection.on("PlayerLeft", id => { others.delete(id); });
 
-                // roster afgør host (laveste connectionId)
+                // host-udpegning via roster (laveste connectionId)
                 connection.on("Roster", ids => decideHost(ids));
 
-                // positions fra andre spillere
+                // andre spilleres positions
                 connection.on("State", (id, ps) => {
                     if (id === myId) return;
                     let o = others.get(id);
-                    if (!o) { o = { x: ps.x, y: ps.y, tx: ps.x, ty: ps.y }; others.set(id, o); }
+                    if (!o) { o = { x: ps.x, y: ps.y, tx: ps.x, ty: ps.y, weaponIndex: 0 }; others.set(id, o); }
                     o.tx = ps.x; o.ty = ps.y;
                 });
 
-                // enemies snapshot fra host
+                // våbenvalg fra andre
+                connection.on("WeaponChanged", (id, idx) => {
+                    if (id === myId) return;
+                    let o = others.get(id) || { x: 0, y: 0, tx: 0, ty: 0, weaponIndex: 0 };
+                    o.weaponIndex = idx | 0;
+                    others.set(id, o);
+                });
+
+                // world sync
                 connection.on("Enemies", list => { if (!isHost) applyEnemies(list); });
+                connection.on("Obstacles", list => { if (!isHost) applyObstacles(list); });
+
+                // skydning
+                connection.on("ShootRequest", (id, payload) => {
+                    if (!isHost) return;
+                    spawnShotFromPayload(payload); // host spawner kugler for alle
+                });
+
+                connection.on("Bullets", list => {
+                    if (isHost) return;
+                    Remote.bullets = list.map(b => ({ x: b.x, y: b.y }));
+                });
 
                 await connection.start();
                 await connection.invoke("Join", "default");
@@ -175,24 +195,25 @@
             function decideHost(ids) {
                 const all = Array.from(ids || []);
                 if (!all.includes(myId)) all.push(myId);
-                all.sort(); // ordinal sammenligning
+                all.sort(); // ordinal
                 const newIsHost = (all[0] === myId);
-                if (newIsHost !== isHost) {
-                    isHost = newIsHost;
+                const changed = newIsHost !== isHost;
+                isHost = newIsHost;
+                if (changed) {
                     updateRoleHud();
+                    // når man bliver host mid-game, så udsend obstacles igen
+                    if (isHost) sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
                 }
             }
 
             function updateRoleHud() {
                 const roleEl = document.getElementById('role');
                 const roleWrap = document.getElementById('netrole');
-                if (!roleEl) return;
-                roleEl.textContent = isHost ? 'Host' : 'Client';
-                if (roleWrap) {
-                    roleWrap.classList.toggle('host-pill', isHost);
-                }
+                if (roleEl) roleEl.textContent = isHost ? 'Host' : 'Client';
+                if (roleWrap) roleWrap.classList.toggle('host-pill', isHost);
             }
 
+            // ---- sendere ----
             function sendState() {
                 if (connection.state !== signalR.HubConnectionState.Connected) return;
                 const p = State.player;
@@ -204,15 +225,34 @@
             }
 
             function sendEnemiesSnapshot(list) {
-                if (!isHost) return;
-                if (connection.state !== signalR.HubConnectionState.Connected) return;
+                if (!isHost || connection.state !== signalR.HubConnectionState.Connected) return;
                 connection.invoke("EnemiesSnapshot", "default", list).catch(() => { });
+            }
+
+            function sendObstaclesSnapshot(list) {
+                if (!isHost || connection.state !== signalR.HubConnectionState.Connected) return;
+                connection.invoke("ObstaclesSnapshot", "default", list).catch(() => { });
+            }
+
+            function sendWeaponChanged(idx) {
+                if (connection.state !== signalR.HubConnectionState.Connected) return;
+                connection.invoke("WeaponChanged", "default", idx | 0).catch(() => { });
+            }
+
+            function sendShootRequest(payload) {
+                if (connection.state !== signalR.HubConnectionState.Connected) return;
+                connection.invoke("ShootRequest", "default", payload).catch(() => { });
+            }
+
+            function sendBulletsSnapshot(list) {
+                if (!isHost || connection.state !== signalR.HubConnectionState.Connected) return;
+                connection.invoke("BulletsSnapshot", "default", list).catch(() => { });
             }
 
             function getOthers() { return others; }
             function getIsHost() { return isHost; }
 
-            return { start, sendState, sendEnemiesSnapshot, getOthers, getIsHost };
+            return { start, sendState, sendEnemiesSnapshot, sendObstaclesSnapshot, sendWeaponChanged, sendShootRequest, sendBulletsSnapshot, getOthers, getIsHost };
         })();
 
         // ===== DOM =====
@@ -256,7 +296,7 @@
             set highScore(v) { localStorage.setItem('boxhead_highscore', String(v | 0)); }
         };
 
-        // ===== Math & RNG helpers =====
+        // ===== Math =====
         const MathX = {
             rand(a, b) { return Math.random() * (b - a) + a; },
             clamp(v, a, b) { return Math.max(a, Math.min(b, v)); },
@@ -288,7 +328,7 @@
         // ===== State =====
         const State = (() => {
             const player = { x: W / 2, y: H / 2, vx: 0, vy: 0, size: Config.player.size, speed: Config.player.speed, hp: Config.player.hp, alive: true };
-            const bullets = [];
+            const bullets = [];   // host: fulde bullets; client: tegner Remote.bullets
             const enemies = [];
             const particles = [];
             const obstacles = [];
@@ -299,6 +339,8 @@
             let highScore = Save.highScore;
             return { player, bullets, enemies, particles, obstacles, pickups, weaponIndex, ammo, score, wave, spawnTimer, pickupTimer, lastFire, highScore };
         })();
+
+        const Remote = { bullets: [] }; // clients tegner disse
 
         // ===== HUD =====
         const HUD = {
@@ -333,7 +375,14 @@
 
         // ===== Systems =====
         const Systems = {
-            handleWeaponKeys(code) { const map = { Digit1: 0, Digit2: 1, Digit3: 2 }; if (code in map) { State.weaponIndex = map[code]; HUD.update(); } },
+            handleWeaponKeys(code) {
+                const map = { Digit1: 0, Digit2: 1, Digit3: 2 };
+                if (code in map) {
+                    State.weaponIndex = map[code];
+                    NET.sendWeaponChanged(State.weaponIndex);
+                    HUD.update();
+                }
+            },
             tryDash() {
                 const now = performance.now(); if (!Systems._dashLast) Systems._dashLast = -9999;
                 if (now - Systems._dashLast < Config.dash.cool) return;
@@ -347,19 +396,24 @@
             shoot() {
                 const w = Weapons[State.weaponIndex];
                 const now = performance.now(); if (now - State.lastFire < w.cd) return;
+
+                // ammo for lokal spiller (UI)
                 if (w.ammoCost > 0) {
                     const slot = State.weaponIndex + 1;
                     if (!State.ammo[slot] || State.ammo[slot] <= 0) { State.lastFire = now; return; }
                     State.ammo[slot] -= w.ammoCost;
                 }
                 State.lastFire = now;
-                const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y, baseAng = Math.atan2(dy, dx);
-                for (let i = 0; i < w.pellets; i++) {
-                    const ang = baseAng + MathX.rand(-w.spread, w.spread);
-                    const vx = Math.cos(ang) * w.speed, vy = Math.sin(ang) * w.speed;
-                    State.bullets.push({ x: State.player.x + Math.cos(baseAng) * (State.player.size + 8), y: State.player.y + Math.sin(baseAng) * (State.player.size + 8), vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce });
+
+                const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y;
+                const baseAng = Math.atan2(dy, dx);
+
+                if (NET.getIsHost()) {
+                    spawnShotFromPayload({ x: State.player.x, y: State.player.y, angle: baseAng, weaponIndex: State.weaponIndex, ts: performance.now() | 0 });
+                } else {
+                    NET.sendShootRequest({ x: State.player.x, y: State.player.y, angle: baseAng, weaponIndex: State.weaponIndex, ts: performance.now() | 0 });
                 }
-                Systems.puff(State.player.x + Math.cos(baseAng) * 14, State.player.y + Math.sin(baseAng) * 14, 6 + w.pellets, 1.2, 160, 'rgba(255,255,255,.5)');
+
                 HUD.update();
             },
             movePlayer(dt) {
@@ -435,7 +489,6 @@
                     }
                 }
             },
-            // --- pickups ---
             spawnPickup() {
                 const options = [2, 3, 3];
                 const type = options[Math.floor(Math.random() * options.length)];
@@ -459,7 +512,6 @@
                     }
                 }
             },
-            // --- spawning (2 enemy types) ---
             spawnEnemy() {
                 const edge = Math.floor(MathX.rand(0, 4)); let x, y;
                 if (edge === 0) { x = MathX.rand(0, W); y = -20; }
@@ -470,27 +522,54 @@
                 const typeRand = Math.random();
                 let type, size, hp, spd, color;
                 if (typeRand < 0.75) {
-                    type = 'normal';
-                    size = MathX.rand(16, 24);
+                    type = 'normal'; size = MathX.rand(16, 24);
                     hp = 10 + State.wave * 2 + MathX.rand(-2, 2);
                     spd = 0.55 + Math.min(1.2, State.wave * 0.05) + MathX.rand(-0.08, 0.08);
                     color = '#ff6b6b';
                 } else {
-                    type = 'big';
-                    size = MathX.rand(36, 44);
+                    type = 'big'; size = MathX.rand(36, 44);
                     hp = 150 + State.wave * 6 + MathX.rand(-4, 4);
                     spd = 0.35 + Math.min(0.7, State.wave * 0.03) + MathX.rand(-0.05, 0.05);
                     color = '#ff9f43';
                 }
                 State.enemies.push({ x, y, vx: 0, vy: 0, size, hp, spd, type, color });
             },
-            nextWave() { State.wave++; for (let i = 0; i < Math.min(Config.spawn.perWaveBase + State.wave * Config.spawn.perWaveScale, Config.spawn.maxBatch); i++) Systems.spawnEnemy(); State.player.hp = MathX.clamp(State.player.hp + 12, 0, 100); Systems.flash('#4de2cc'); },
-            // --- fx ---
+            nextWave() {
+                State.wave++;
+                for (let i = 0; i < Math.min(Config.spawn.perWaveBase + State.wave * Config.spawn.perWaveScale, Config.spawn.maxBatch); i++) Systems.spawnEnemy();
+                State.player.hp = MathX.clamp(State.player.hp + 12, 0, 100); Systems.flash('#4de2cc');
+            },
             puff(x, y, n = 12, speed = 3, life = 500, c = 'rgba(255,255,255,.8)') { for (let i = 0; i < n; i++) { const a = MathX.rand(0, Math.PI * 2), v = MathX.rand(0.5, speed); State.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, c }); } },
             blood(x, y) { Systems.puff(x, y, 16, 2.6, 700, 'rgba(255,80,80,.8)'); },
             flash(color) { State.particles.push({ x: W / 2, y: H / 2, vx: 0, vy: 0, life: 160, c: color, full: true }); },
             updateParticles(dt) { for (let i = State.particles.length - 1; i >= 0; i--) { const p = State.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= dt; if (p.life <= 0) State.particles.splice(i, 1); } }
         };
+
+        // ===== Host: spawn kugler ud fra payload =====
+        function spawnShotFromPayload({ x, y, angle, weaponIndex }) {
+            const w = Weapons[weaponIndex];
+            const baseAng = angle;
+            for (let i = 0; i < w.pellets; i++) {
+                const ang = baseAng + MathX.rand(-w.spread, w.spread);
+                const vx = Math.cos(ang) * w.speed, vy = Math.sin(ang) * w.speed;
+                State.bullets.push({
+                    x: x + Math.cos(baseAng) * (State.player.size + 8),
+                    y: y + Math.sin(baseAng) * (State.player.size + 8),
+                    vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce
+                });
+            }
+            Systems.puff(x + Math.cos(baseAng) * 14, y + Math.sin(baseAng) * 14, 6 + w.pellets, 1.2, 160, 'rgba(255,255,255,.5)');
+        }
+
+        // ===== Apply snapshots =====
+        function applyEnemies(list) {
+            State.enemies.length = 0;
+            for (const e of list) State.enemies.push({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color, vx: 0, vy: 0 });
+        }
+        function applyObstacles(list) {
+            State.obstacles.length = 0;
+            for (const o of list) State.obstacles.push({ x: o.x, y: o.y, w: o.w, h: o.h });
+        }
 
         // ===== Render =====
         const Render = {
@@ -537,6 +616,9 @@
                     ctx.fillStyle = '#9aa7ff';
                     const s = 22;
                     ctx.fillRect(-s / 2, -s / 2, s, s);
+                    // valgfri lille “våbenprik”
+                    ctx.fillStyle = ['#e7ecf3', '#ffb84d', '#4da6ff'][p.weaponIndex ?? 0] || '#e7ecf3';
+                    ctx.fillRect(s / 2 + 4, -3, 8, 6);
                     ctx.restore();
                 }
 
@@ -548,8 +630,11 @@
                     ctx.restore();
                 }
 
-                // bullets
-                ctx.save(); ctx.fillStyle = '#e7ecf3'; for (const b2 of State.bullets) { ctx.fillRect(b2.x - 2, b2.y - 2, 4, 4); } ctx.restore();
+                // bullets (host: State.bullets, clients: Remote.bullets)
+                ctx.save(); ctx.fillStyle = '#e7ecf3';
+                const list = NET.getIsHost() ? State.bullets : Remote.bullets;
+                for (const b2 of list) ctx.fillRect(b2.x - 2, b2.y - 2, 4, 4);
+                ctx.restore();
 
                 // paused
                 if (Game.paused) {
@@ -560,32 +645,30 @@
             }
         };
 
-        // ===== Enemy snapshots for clients =====
-        function applyEnemies(list) {
-            State.enemies.length = 0;
-            for (const e of list) {
-                State.enemies.push({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color, vx: 0, vy: 0 });
-            }
-        }
-
-        // ===== Game (lifecycle + fixed timestep) =====
+        // ===== Game =====
         const Game = {
-            running: false, paused: false,
+            running: false, paused: false, _sentObstacles: false,
             init() {
                 MapGen.makeOpenArena();
-                State.enemies.length = 0; State.bullets.length = 0; State.particles.length = 0; State.pickups.length = 0;
+                State.enemies.length = 0; State.bullets.length = 0; Remote.bullets = [];
+                State.particles.length = 0; State.pickups.length = 0;
                 State.player.x = W / 2; State.player.y = H / 2; State.player.vx = 0; State.player.vy = 0; State.player.hp = Config.player.hp; State.player.alive = true;
                 State.weaponIndex = 0; State.ammo[2] = 0; State.ammo[3] = 0;
                 State.score = 0; State.wave = 1; State.spawnTimer = 0; State.pickupTimer = 0; State.lastFire = -1e9;
+
+                // et par start-pickups
                 for (let i = 0; i < 2; i++) State.pickups.push({ x: Config.bounds.x + 80 + i * 60, y: Config.bounds.y + 80, w: 28, h: 28, type: i === 0 ? 2 : 3 });
+
                 HUD.update(); HUD.showOverlay('Velkommen til Box Head');
+                Game._sentObstacles = false; // send obstacles ved start hvis vi er host
             },
             start() {
                 this.running = true; this.paused = false; HUD.hideOverlay();
                 NET.start();
                 this._acc = 0; this._last = performance.now();
                 requestAnimationFrame(this.loop.bind(this));
-                // net tick for host enemy snapshots (~20 Hz)
+
+                // net tick (20 Hz): enemies + bullets (kun host)
                 (function netTick() {
                     const now = performance.now();
                     if (!netTick._last || now - netTick._last > 50) {
@@ -593,13 +676,22 @@
                         if (NET.getIsHost()) {
                             const es = State.enemies.map(e => ({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color }));
                             NET.sendEnemiesSnapshot(es);
+
+                            const bs = State.bullets.map(b => ({ x: b.x, y: b.y }));
+                            NET.sendBulletsSnapshot(bs);
+
+                            // send obstacles én gang pr. runde hvis ikke sendt endnu
+                            if (!Game._sentObstacles) {
+                                NET.sendObstaclesSnapshot(State.obstacles.map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h })));
+                                Game._sentObstacles = true;
+                            }
                         }
                     }
                     requestAnimationFrame(netTick);
                 })();
             },
             loop(ts) {
-                if (!this.running) { return; }
+                if (!this.running) return;
                 const frame = ts - this._last; this._last = ts;
                 if (!this.paused) {
                     this._acc = Math.min(this._acc + frame, 250);
@@ -609,16 +701,15 @@
                 requestAnimationFrame(this.loop.bind(this));
             },
             update(dt) {
-                // lokal input
                 if (Input.mouse.down) Systems.shoot();
                 Systems.movePlayer(dt);
-                Systems.moveBullets(dt);
 
-                // Enemy simulation kun på host
+                // Host simulerer verden + combat + bullets
                 if (NET.getIsHost()) {
                     Systems.moveEnemies(dt);
                     Systems.damageOnTouch(dt);
                     Systems.bulletsVsEnemies();
+                    Systems.moveBullets(dt);
                 }
 
                 Systems.updateParticles(dt);
@@ -654,14 +745,13 @@
             render() { Render.draw(); },
             gameOver() {
                 if (!State.player.alive) return;
-                State.player.alive = false;
-                this.paused = false;
+                State.player.alive = false; this.paused = false;
                 if (State.score > State.highScore) { State.highScore = State.score; Save.highScore = State.highScore; }
                 HUD.showOverlay(`Game Over – Score: ${State.score} (High Score: ${State.highScore})`);
             }
         };
 
-        // ===== Wire up buttons =====
+        // ===== Wire up =====
         if (hud.startBtn) hud.startBtn.addEventListener('click', () => Game.start());
         if (hud.restartBtn) hud.restartBtn.addEventListener('click', () => Game.init());
 
