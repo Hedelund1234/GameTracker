@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Box Head – Mini Shooter (Refactored, 2 zombietyper, ingen sniper)</title>
+    <title>Box Head – Mini Shooter (Multiplayer host-sync)</title>
     <style>
         :root {
             --bg: #0f1220;
@@ -91,6 +91,10 @@
             padding: 2px 6px;
             border-radius: 6px
         }
+
+        .host-pill {
+            outline: 2px solid var(--accent);
+        }
     </style>
 </head>
 
@@ -101,6 +105,7 @@
         <span class="pill">Score: <b id="score">0</b></span>
         <span class="pill">Wave: <b id="wave">1</b></span>
         <span class="pill">HP: <b id="hp">100</b></span>
+        <span class="pill" id="netrole">Net: <b id="role">—</b></span>
         <button id="restart" class="btn">Genstart</button>
     </div>
 
@@ -122,14 +127,16 @@
         </div>
     </div>
 
+    <!-- SignalR v8 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
 
     <script>
         'use strict';
-        // ===== NET: multiplayer via SignalR =====
+
+        // ===== NET: multiplayer via SignalR (client-authoritative player state, host-synced enemies) =====
         const NET = (() => {
-            // SKIFT denne til din offentlige proxy-URL bag YARP (skal være wss + /hub)
-            const HUB_URL = "https://www.hedef.dk/gamehub"; // <-- RET DENNE!
+            // SKIFT denne til din offentlige proxy-URL bag YARP (skal være wss + /hub). SignalR vælger selv ws/https.
+            const HUB_URL = "https://www.hedef.dk/gamehub";
 
             const connection = new signalR.HubConnectionBuilder()
                 .withUrl(HUB_URL, { withCredentials: false })
@@ -137,36 +144,75 @@
                 .build();
 
             let myId = null;
-            const others = new Map();
-            let joined = false;
+            const others = new Map(); // id -> {x,y, tx,ty}
+            let isHost = false;
 
             async function start() {
                 connection.on("Welcome", id => { myId = id; });
-                connection.on("PlayerJoined", id => { /* valgfrit UI */ });
+                connection.on("PlayerJoined", id => { /* evt. UI */ });
                 connection.on("PlayerLeft", id => { others.delete(id); });
+
+                // roster afgør host (laveste connectionId)
+                connection.on("Roster", ids => decideHost(ids));
+
+                // positions fra andre spillere
                 connection.on("State", (id, ps) => {
-                    if (id === myId) return;        // egen state håndteres lokalt
-                    others.set(id, ps);
+                    if (id === myId) return;
+                    let o = others.get(id);
+                    if (!o) { o = { x: ps.x, y: ps.y, tx: ps.x, ty: ps.y }; others.set(id, o); }
+                    o.tx = ps.x; o.ty = ps.y;
                 });
+
+                // enemies snapshot fra host
+                connection.on("Enemies", list => { if (!isHost) applyEnemies(list); });
 
                 await connection.start();
                 await connection.invoke("Join", "default");
-                joined = true;
                 console.log("Connected to hub as", myId);
+                updateRoleHud();
             }
 
-            function sendInput(ax, ay, shoot, aimX, aimY) {
-                if (!joined || connection.state !== signalR.HubConnectionState.Connected) return;
-                connection.invoke("Input", {
+            function decideHost(ids) {
+                const all = Array.from(ids || []);
+                if (!all.includes(myId)) all.push(myId);
+                all.sort(); // ordinal sammenligning
+                const newIsHost = (all[0] === myId);
+                if (newIsHost !== isHost) {
+                    isHost = newIsHost;
+                    updateRoleHud();
+                }
+            }
+
+            function updateRoleHud() {
+                const roleEl = document.getElementById('role');
+                const roleWrap = document.getElementById('netrole');
+                if (!roleEl) return;
+                roleEl.textContent = isHost ? 'Host' : 'Client';
+                if (roleWrap) {
+                    roleWrap.classList.toggle('host-pill', isHost);
+                }
+            }
+
+            function sendState() {
+                if (connection.state !== signalR.HubConnectionState.Connected) return;
+                const p = State.player;
+                connection.invoke("UpdateSelf", {
                     Room: "default",
-                    Ax: ax, Ay: ay, Shoot: shoot, AimX: aimX, AimY: aimY,
+                    X: p.x, Y: p.y, VX: p.vx, VY: p.vy,
                     ClientTs: performance.now() | 0
                 }).catch(() => { });
             }
 
-            function getOthers() { return others; }
+            function sendEnemiesSnapshot(list) {
+                if (!isHost) return;
+                if (connection.state !== signalR.HubConnectionState.Connected) return;
+                connection.invoke("EnemiesSnapshot", "default", list).catch(() => { });
+            }
 
-            return { start, sendInput, getOthers };
+            function getOthers() { return others; }
+            function getIsHost() { return isHost; }
+
+            return { start, sendState, sendEnemiesSnapshot, getOthers, getIsHost };
         })();
 
         // ===== DOM =====
@@ -182,7 +228,8 @@
             startOverlay: document.getElementById('startOverlay'),
             startBtn: document.getElementById('startBtn'),
             overlayTitle: document.getElementById('overlayTitle'),
-            restartBtn: document.getElementById('restart')
+            restartBtn: document.getElementById('restart'),
+            role: document.getElementById('role')
         };
 
         // ===== Config =====
@@ -190,20 +237,20 @@
             bounds: { x: 60, y: 60, w: W - 120, h: H - 120 },
             friction: 0.86,
             dash: { cool: 900, speed: 7 },
-            player: { speed: 0.5, size: 22, hp: 100 }, // 4× langsommere
+            player: { speed: 0.5, size: 22, hp: 100 },
             spawn: { perWaveBase: 6, perWaveScale: 1.1, maxBatch: 22 },
             pickups: { max: 3, spawnMin: 20000, spawnMax: 30000 },
-            fixedDt: 1000 / 60, // physics step (ms)
+            fixedDt: 1000 / 60,
         });
 
-        // ===== Weapons (Sniper fjernet) =====
+        // ===== Weapons =====
         const Weapons = [
             { key: '1', name: 'Pistol', dmg: 20, speed: 10, cd: 500, spread: 0.02, pellets: 1, pierce: 0, life: 900, ammoCost: 0, pickup: 0 },
             { key: '2', name: 'Shotgun', dmg: 14, speed: 9, cd: 600, spread: 0.18, pellets: 8, pierce: 0, life: 500, ammoCost: 1, pickup: 40 },
             { key: '3', name: 'Riffel', dmg: 22, speed: 14, cd: 90, spread: 0.01, pellets: 1, pierce: 0, life: 1100, ammoCost: 1, pickup: 120 }
         ];
 
-        // ===== Save (localStorage) =====
+        // ===== Save =====
         const Save = {
             get highScore() { return parseInt(localStorage.getItem('boxhead_highscore')) || 0; },
             set highScore(v) { localStorage.setItem('boxhead_highscore', String(v | 0)); }
@@ -220,9 +267,19 @@
         const Input = (() => {
             const keys = new Set();
             const mouse = { x: W / 2, y: H / 2, down: false };
-            window.addEventListener('keydown', e => { if (e.code === 'KeyP') { Game.paused = !Game.paused; return; } if (e.code === 'Space') { mouse.down = true; } if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { Systems.tryDash(); } keys.add(e.code); Systems.handleWeaponKeys(e.code); });
-            window.addEventListener('keyup', e => { if (e.code === 'Space') { mouse.down = false; } keys.delete(e.code); });
-            canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); mouse.x = (e.clientX - r.left) * (canvas.width / r.width); mouse.y = (e.clientY - r.top) * (canvas.height / r.height); });
+            window.addEventListener('keydown', e => {
+                if (e.code === 'KeyP') { Game.paused = !Game.paused; return; }
+                if (e.code === 'Space') { mouse.down = true; }
+                if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { Systems.tryDash(); }
+                keys.add(e.code);
+                Systems.handleWeaponKeys(e.code);
+            });
+            window.addEventListener('keyup', e => { if (e.code === 'Space') mouse.down = false; keys.delete(e.code); });
+            canvas.addEventListener('mousemove', e => {
+                const r = canvas.getBoundingClientRect();
+                mouse.x = (e.clientX - r.left) * (canvas.width / r.width);
+                mouse.y = (e.clientY - r.top) * (canvas.height / r.height);
+            });
             canvas.addEventListener('mousedown', () => mouse.down = true);
             canvas.addEventListener('mouseup', () => mouse.down = false);
             return { keys, mouse };
@@ -231,12 +288,12 @@
         // ===== State =====
         const State = (() => {
             const player = { x: W / 2, y: H / 2, vx: 0, vy: 0, size: Config.player.size, speed: Config.player.speed, hp: Config.player.hp, alive: true };
-            const bullets = []; // {x,y,vx,vy,life,damage,pierce}
-            const enemies = []; // {x,y,vx,vy,size,hp,spd,type,color}
-            const particles = []; // {x,y,vx,vy,life,c,full}
-            const obstacles = []; // crates {x,y,w,h}
-            const pickups = []; // {x,y,w,h,type}
-            let weaponIndex = 0; // 0..2
+            const bullets = [];
+            const enemies = [];
+            const particles = [];
+            const obstacles = [];
+            const pickups = [];
+            let weaponIndex = 0;
             const ammo = { 1: Infinity, 2: 0, 3: 0 };
             let score = 0, wave = 1, spawnTimer = 0, pickupTimer = 0, lastFire = -1e9;
             let highScore = Save.highScore;
@@ -258,7 +315,7 @@
             hideOverlay() { if (hud.startOverlay) hud.startOverlay.style.display = 'none'; },
         };
 
-        // ===== Map generation (10–20 crates) =====
+        // ===== Map generation =====
         const MapGen = {
             makeOpenArena() {
                 State.obstacles.length = 0;
@@ -277,18 +334,132 @@
         // ===== Systems =====
         const Systems = {
             handleWeaponKeys(code) { const map = { Digit1: 0, Digit2: 1, Digit3: 2 }; if (code in map) { State.weaponIndex = map[code]; HUD.update(); } },
-            tryDash() { const now = performance.now(); if (!Systems._dashLast) Systems._dashLast = -9999; if (now - Systems._dashLast < Config.dash.cool) return; let dx = 0, dy = 0; const k = Input.keys; if (k.has('KeyW')) dy -= 1; if (k.has('KeyS')) dy += 1; if (k.has('KeyA')) dx -= 1; if (k.has('KeyD')) dx += 1; if (!dx && !dy) return; const [nx, ny] = MathX.norm(dx, dy); State.player.vx += nx * Config.dash.speed; State.player.vy += ny * Config.dash.speed; Systems.puff(State.player.x, State.player.y, 14, 4, 300, 'rgba(77,226,204,.75)'); Systems._dashLast = now; },
-            shoot() { const w = Weapons[State.weaponIndex]; const now = performance.now(); if (now - State.lastFire < w.cd) return; if (w.ammoCost > 0) { const slot = State.weaponIndex + 1; if (!State.ammo[slot] || State.ammo[slot] <= 0) { State.lastFire = now; return; } State.ammo[slot] -= w.ammoCost; } State.lastFire = now; const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y, baseAng = Math.atan2(dy, dx); for (let i = 0; i < w.pellets; i++) { const ang = baseAng + MathX.rand(-w.spread, w.spread); const vx = Math.cos(ang) * w.speed, vy = Math.sin(ang) * w.speed; State.bullets.push({ x: State.player.x + Math.cos(baseAng) * (State.player.size + 8), y: State.player.y + Math.sin(baseAng) * (State.player.size + 8), vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce }); } Systems.puff(State.player.x + Math.cos(baseAng) * 14, State.player.y + Math.sin(baseAng) * 14, 6 + w.pellets, 1.2, 160, 'rgba(255,255,255,.5)'); HUD.update(); },
-            movePlayer(dt) { let ax = 0, ay = 0; const k = Input.keys; if (k.has('KeyW')) ay -= 1; if (k.has('KeyS')) ay += 1; if (k.has('KeyA')) ax -= 1; if (k.has('KeyD')) ax += 1; if (ax || ay) { const [nx, ny] = MathX.norm(ax, ay); State.player.vx += nx * State.player.speed; State.player.vy += ny * State.player.speed; } State.player.vx *= Config.friction; State.player.vy *= Config.friction; State.player.x += State.player.vx; State.player.y += State.player.vy; Systems.resolveAABB(State.player, State.player.size); },
-            moveBullets(dt) { for (let i = State.bullets.length - 1; i >= 0; i--) { const b = State.bullets[i]; b.x += b.vx; b.y += b.vy; b.life -= dt; let hit = false; for (const o of State.obstacles) { if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) { hit = true; break; } } if (hit) { Systems.puff(b.x, b.y, 6, 1.1, 200, 'rgba(230,236,243,.6)'); State.bullets.splice(i, 1); continue; } if (b.x < -50 || b.y < -50 || b.x > W + 50 || b.y > H + 50 || b.life <= 0) State.bullets.splice(i, 1); } },
-            moveEnemies(dt) { for (const e of State.enemies) { const dx = State.player.x - e.x, dy = State.player.y - e.y, d = Math.hypot(dx, dy) + 1e-4; const s = e.spd * (1 + Math.min(0.6, 30 / d)); e.vx = (dx / d) * s; e.vy = (dy / d) * s; e.x += e.vx; e.y += e.vy; Systems.resolveAABB(e, e.size); } },
-            resolveAABB(ent, size) { const b = Config.bounds; ent.x = MathX.clamp(ent.x, b.x + size / 2, b.x + b.w - size / 2); ent.y = MathX.clamp(ent.y, b.y + size / 2, b.y + b.h - size / 2); for (const o of State.obstacles) { const ex = ent.x - size / 2, ey = ent.y - size / 2, ew = size, eh = size; if (ex < o.x + o.w && ex + ew > o.x && ey < o.y + o.h && ey + eh > o.y) { const dx1 = (o.x + o.w) - ex, dx2 = (ex + ew) - o.x, dy1 = (o.y + o.h) - ey, dy2 = (ey + eh) - o.y; const m = Math.min(dx1, dx2, dy1, dy2); if (m === dx1) ent.x = o.x + o.w + size / 2; else if (m === dx2) ent.x = o.x - size / 2; else if (m === dy1) ent.y = o.y + o.h + size / 2; else ent.y = o.y - size / 2; } } },
-            damageOnTouch(dt) { for (const e of State.enemies) { if (Math.hypot(State.player.x - e.x, State.player.y - e.y) < e.size + State.player.size - 6) { State.player.hp -= 10 * dt / 1000; if (State.player.hp <= 0) { Game.gameOver(); return; } if (Math.random() < 0.2) Systems.blood(State.player.x, State.player.y); } } },
-            bulletsVsEnemies() { for (let i = State.enemies.length - 1; i >= 0; i--) { const e = State.enemies[i]; for (let j = State.bullets.length - 1; j >= 0; j--) { const b = State.bullets[j]; if (Math.hypot(b.x - e.x, b.y - e.y) < e.size) { e.hp -= (b.damage || 20); if (e.hp <= 0) { Systems.puff(e.x, e.y, 18, 2.4, 500, 'rgba(255,107,107,.9)'); State.enemies.splice(i, 1); State.score += 10; } if (b.pierce && b.pierce > 0) { b.pierce--; Systems.blood(e.x, e.y); } else { State.bullets.splice(j, 1); Systems.blood(e.x, e.y); } break; } } } },
+            tryDash() {
+                const now = performance.now(); if (!Systems._dashLast) Systems._dashLast = -9999;
+                if (now - Systems._dashLast < Config.dash.cool) return;
+                let dx = 0, dy = 0; const k = Input.keys;
+                if (k.has('KeyW')) dy -= 1; if (k.has('KeyS')) dy += 1; if (k.has('KeyA')) dx -= 1; if (k.has('KeyD')) dx += 1;
+                if (!dx && !dy) return; const [nx, ny] = MathX.norm(dx, dy);
+                State.player.vx += nx * Config.dash.speed; State.player.vy += ny * Config.dash.speed;
+                Systems.puff(State.player.x, State.player.y, 14, 4, 300, 'rgba(77,226,204,.75)');
+                Systems._dashLast = now;
+            },
+            shoot() {
+                const w = Weapons[State.weaponIndex];
+                const now = performance.now(); if (now - State.lastFire < w.cd) return;
+                if (w.ammoCost > 0) {
+                    const slot = State.weaponIndex + 1;
+                    if (!State.ammo[slot] || State.ammo[slot] <= 0) { State.lastFire = now; return; }
+                    State.ammo[slot] -= w.ammoCost;
+                }
+                State.lastFire = now;
+                const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y, baseAng = Math.atan2(dy, dx);
+                for (let i = 0; i < w.pellets; i++) {
+                    const ang = baseAng + MathX.rand(-w.spread, w.spread);
+                    const vx = Math.cos(ang) * w.speed, vy = Math.sin(ang) * w.speed;
+                    State.bullets.push({ x: State.player.x + Math.cos(baseAng) * (State.player.size + 8), y: State.player.y + Math.sin(baseAng) * (State.player.size + 8), vx, vy, life: w.life, damage: w.dmg, pierce: w.pierce });
+                }
+                Systems.puff(State.player.x + Math.cos(baseAng) * 14, State.player.y + Math.sin(baseAng) * 14, 6 + w.pellets, 1.2, 160, 'rgba(255,255,255,.5)');
+                HUD.update();
+            },
+            movePlayer(dt) {
+                let ax = 0, ay = 0; const k = Input.keys;
+                if (k.has('KeyW')) ay -= 1; if (k.has('KeyS')) ay += 1; if (k.has('KeyA')) ax -= 1; if (k.has('KeyD')) ax += 1;
+                if (ax || ay) { const [nx, ny] = MathX.norm(ax, ay); State.player.vx += nx * State.player.speed; State.player.vy += ny * State.player.speed; }
+                State.player.vx *= Config.friction; State.player.vy *= Config.friction;
+                State.player.x += State.player.vx; State.player.y += State.player.vy;
+                Systems.resolveAABB(State.player, State.player.size);
+            },
+            moveBullets(dt) {
+                for (let i = State.bullets.length - 1; i >= 0; i--) {
+                    const b = State.bullets[i];
+                    b.x += b.vx; b.y += b.vy; b.life -= dt;
+                    let hit = false;
+                    for (const o of State.obstacles) {
+                        if (b.x > o.x && b.x < o.x + o.w && b.y > o.y && b.y < o.y + o.h) { hit = true; break; }
+                    }
+                    if (hit) { Systems.puff(b.x, b.y, 6, 1.1, 200, 'rgba(230,236,243,.6)'); State.bullets.splice(i, 1); continue; }
+                    if (b.x < -50 || b.y < -50 || b.x > W + 50 || b.y > H + 50 || b.life <= 0) State.bullets.splice(i, 1);
+                }
+            },
+            moveEnemies(dt) {
+                for (const e of State.enemies) {
+                    const dx = State.player.x - e.x, dy = State.player.y - e.y, d = Math.hypot(dx, dy) + 1e-4;
+                    const s = e.spd * (1 + Math.min(0.6, 30 / d));
+                    e.vx = (dx / d) * s; e.vy = (dy / d) * s;
+                    e.x += e.vx; e.y += e.vy;
+                    Systems.resolveAABB(e, e.size);
+                }
+            },
+            resolveAABB(ent, size) {
+                const b = Config.bounds;
+                ent.x = MathX.clamp(ent.x, b.x + size / 2, b.x + b.w - size / 2);
+                ent.y = MathX.clamp(ent.y, b.y + size / 2, b.y + b.h - size / 2);
+                for (const o of State.obstacles) {
+                    const ex = ent.x - size / 2, ey = ent.y - size / 2, ew = size, eh = size;
+                    if (ex < o.x + o.w && ex + ew > o.x && ey < o.y + o.h && ey + eh > o.y) {
+                        const dx1 = (o.x + o.w) - ex, dx2 = (ex + ew) - o.x, dy1 = (o.y + o.h) - ey, dy2 = (ey + eh) - o.y;
+                        const m = Math.min(dx1, dx2, dy1, dy2);
+                        if (m === dx1) ent.x = o.x + o.w + size / 2;
+                        else if (m === dx2) ent.x = o.x - size / 2;
+                        else if (m === dy1) ent.y = o.y + o.h + size / 2;
+                        else ent.y = o.y - size / 2;
+                    }
+                }
+            },
+            damageOnTouch(dt) {
+                for (const e of State.enemies) {
+                    if (Math.hypot(State.player.x - e.x, State.player.y - e.y) < e.size + State.player.size - 6) {
+                        State.player.hp -= 10 * dt / 1000;
+                        if (State.player.hp <= 0) { Game.gameOver(); return; }
+                        if (Math.random() < 0.2) Systems.blood(State.player.x, State.player.y);
+                    }
+                }
+            },
+            bulletsVsEnemies() {
+                for (let i = State.enemies.length - 1; i >= 0; i--) {
+                    const e = State.enemies[i];
+                    for (let j = State.bullets.length - 1; j >= 0; j--) {
+                        const b = State.bullets[j];
+                        if (Math.hypot(b.x - e.x, b.y - e.y) < e.size) {
+                            e.hp -= (b.damage || 20);
+                            if (e.hp <= 0) {
+                                Systems.puff(e.x, e.y, 18, 2.4, 500, 'rgba(255,107,107,.9)');
+                                State.enemies.splice(i, 1);
+                                State.score += 10;
+                            }
+                            if (b.pierce && b.pierce > 0) { b.pierce--; Systems.blood(e.x, e.y); }
+                            else { State.bullets.splice(j, 1); Systems.blood(e.x, e.y); }
+                            break;
+                        }
+                    }
+                }
+            },
             // --- pickups ---
-            spawnPickup() { const options = [2, 3, 3]; const type = options[Math.floor(Math.random() * options.length)]; const b = Config.bounds; const w = 28, h = 28; for (let tries = 0; tries < 50; tries++) { const x = MathX.rand(b.x + 20, b.x + b.w - w - 20), y = MathX.rand(b.y + 20, b.y + b.h - h - 20); const startSafe = { x: W / 2 - 160, y: H / 2 - 160, w: 320, h: 320 }; let bad = x < startSafe.x + startSafe.w && x + w > startSafe.x && y < startSafe.y + startSafe.h && y + h > startSafe.y; for (const o of State.obstacles) { if (x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y) { bad = true; break; } } if (!bad) { State.pickups.push({ x, y, w, h, type }); break; } } },
-            tryPickup() { for (let i = State.pickups.length - 1; i >= 0; i--) { const p = State.pickups[i]; if (State.player.x > p.x && State.player.x < p.x + p.w && State.player.y > p.y && State.player.y < p.y + p.h) { const w = Weapons[p.type - 1]; State.ammo[p.type] = (State.ammo[p.type] || 0) + w.pickup; State.pickups.splice(i, 1); HUD.update(); } } },
-            // --- spawning (with 2 enemy types: normal & big) ---
+            spawnPickup() {
+                const options = [2, 3, 3];
+                const type = options[Math.floor(Math.random() * options.length)];
+                const b = Config.bounds; const w = 28, h = 28;
+                for (let tries = 0; tries < 50; tries++) {
+                    const x = MathX.rand(b.x + 20, b.x + b.w - w - 20), y = MathX.rand(b.y + 20, b.y + b.h - h - 20);
+                    const startSafe = { x: W / 2 - 160, y: H / 2 - 160, w: 320, h: 320 };
+                    let bad = x < startSafe.x + startSafe.w && x + w > startSafe.x && y < startSafe.y + startSafe.h && y + h > startSafe.y;
+                    for (const o of State.obstacles) { if (x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y) { bad = true; break; } }
+                    if (!bad) { State.pickups.push({ x, y, w, h, type }); break; }
+                }
+            },
+            tryPickup() {
+                for (let i = State.pickups.length - 1; i >= 0; i--) {
+                    const p = State.pickups[i];
+                    if (State.player.x > p.x && State.player.x < p.x + p.w && State.player.y > p.y && State.player.y < p.y + p.h) {
+                        const w = Weapons[p.type - 1];
+                        State.ammo[p.type] = (State.ammo[p.type] || 0) + w.pickup;
+                        State.pickups.splice(i, 1);
+                        HUD.update();
+                    }
+                }
+            },
+            // --- spawning (2 enemy types) ---
             spawnEnemy() {
                 const edge = Math.floor(MathX.rand(0, 4)); let x, y;
                 if (edge === 0) { x = MathX.rand(0, W); y = -20; }
@@ -326,35 +497,76 @@
             draw() {
                 ctx.clearRect(0, 0, W, H);
                 const b = Config.bounds;
+
                 // background & bounds
-                ctx.save(); ctx.fillStyle = '#0a0e1b'; ctx.fillRect(0, 0, W, H); ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 2; ctx.strokeRect(b.x - 10, b.y - 10, b.w + 20, b.h + 20); ctx.globalAlpha = .06; for (let x = b.x; x < b.x + b.w; x += 40) { ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke(); } for (let y = b.y; y < b.y + b.h; y += 40) { ctx.beginPath(); ctx.moveTo(b.x, y); ctx.lineTo(b.x + b.w, y); ctx.stroke(); } ctx.globalAlpha = 1; ctx.restore();
+                ctx.save(); ctx.fillStyle = '#0a0e1b'; ctx.fillRect(0, 0, W, H);
+                ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 2; ctx.strokeRect(b.x - 10, b.y - 10, b.w + 20, b.h + 20);
+                ctx.globalAlpha = .06;
+                for (let x = b.x; x < b.x + b.w; x += 40) { ctx.beginPath(); ctx.moveTo(x, b.y); ctx.lineTo(x, b.y + b.h); ctx.stroke(); }
+                for (let y = b.y; y < b.y + b.h; y += 40) { ctx.beginPath(); ctx.moveTo(b.x, y); ctx.lineTo(b.x + b.w, y); ctx.stroke(); }
+                ctx.globalAlpha = 1; ctx.restore();
+
                 // crates
                 ctx.save(); for (const o of State.obstacles) { ctx.fillStyle = '#1e243f'; ctx.fillRect(o.x, o.y, o.w, o.h); ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.strokeRect(o.x + 0.5, o.y + 0.5, o.w - 1, o.h - 1); } ctx.restore();
+
                 // pickups
                 ctx.save(); for (const p of State.pickups) { let col = '#ffb84d'; if (p.type === 3) col = '#4da6ff'; ctx.fillStyle = col; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1); } ctx.restore();
+
                 // particles
-                for (const p of State.particles) { if (p.full) { const t = MathX.clamp(p.life / 160, 0, 1); ctx.save(); ctx.globalAlpha = t * 0.25; ctx.fillStyle = p.c; ctx.fillRect(0, 0, W, H); ctx.restore(); } else { ctx.save(); ctx.globalAlpha = MathX.clamp(p.life / 500, 0, 1); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); ctx.restore(); } }
-                // player
-                if (State.player.alive) { const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y; const [nx, ny] = MathX.norm(dx, dy); const head = 12, body = State.player.size; ctx.save(); ctx.translate(State.player.x, State.player.y); ctx.rotate(Math.atan2(ny, nx)); ctx.fillStyle = '#1b2a57'; ctx.fillRect(-body / 2, -body / 2, body, body); ctx.fillStyle = '#4de2cc'; ctx.fillRect(body / 2 - 2, -head / 2, head, head); ctx.fillStyle = '#e7ecf3'; ctx.fillRect(body / 2 + head - 2, -3, 16, 6); ctx.restore(); }
-                // === ANDRE SPILLERE (fra server) ===
-                if (typeof NET !== 'undefined' && NET.getOthers) {
-                    for (const [, p] of NET.getOthers()) {
-                        ctx.save();
-                        ctx.translate(p.x, p.y);
-                        ctx.fillStyle = '#9aa7ff';   // farve til medspillere
-                        const s = 22;
-                        ctx.fillRect(-s / 2, -s / 2, s, s);
-                        ctx.restore();
-                    }
+                for (const p of State.particles) {
+                    if (p.full) { const t = MathX.clamp(p.life / 160, 0, 1); ctx.save(); ctx.globalAlpha = t * 0.25; ctx.fillStyle = p.c; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+                    else { ctx.save(); ctx.globalAlpha = MathX.clamp(p.life / 500, 0, 1); ctx.fillStyle = p.c; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); ctx.restore(); }
                 }
-                // enemies (use type color)
-                for (const e of State.enemies) { ctx.save(); ctx.translate(e.x, e.y); ctx.fillStyle = e.color || '#ff6b6b'; ctx.fillRect(-e.size / 2, -e.size / 2, e.size, e.size); ctx.fillStyle = '#10131f'; ctx.fillRect(-4, -4, 3, 3); ctx.fillRect(1, -4, 3, 3); ctx.restore(); }
+
+                // player (lokal)
+                if (State.player.alive) {
+                    const dx = Input.mouse.x - State.player.x, dy = Input.mouse.y - State.player.y;
+                    const [nx, ny] = MathX.norm(dx, dy);
+                    const head = 12, body = State.player.size;
+                    ctx.save(); ctx.translate(State.player.x, State.player.y); ctx.rotate(Math.atan2(ny, nx));
+                    ctx.fillStyle = '#1b2a57'; ctx.fillRect(-body / 2, -body / 2, body, body);
+                    ctx.fillStyle = '#4de2cc'; ctx.fillRect(body / 2 - 2, -head / 2, head, head);
+                    ctx.fillStyle = '#e7ecf3'; ctx.fillRect(body / 2 + head - 2, -3, 16, 6);
+                    ctx.restore();
+                }
+
+                // andre spillere (smoothed)
+                for (const [, p] of NET.getOthers()) {
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.fillStyle = '#9aa7ff';
+                    const s = 22;
+                    ctx.fillRect(-s / 2, -s / 2, s, s);
+                    ctx.restore();
+                }
+
+                // enemies
+                for (const e of State.enemies) {
+                    ctx.save(); ctx.translate(e.x, e.y); ctx.fillStyle = e.color || '#ff6b6b';
+                    ctx.fillRect(-e.size / 2, -e.size / 2, e.size, e.size);
+                    ctx.fillStyle = '#10131f'; ctx.fillRect(-4, -4, 3, 3); ctx.fillRect(1, -4, 3, 3);
+                    ctx.restore();
+                }
+
                 // bullets
                 ctx.save(); ctx.fillStyle = '#e7ecf3'; for (const b2 of State.bullets) { ctx.fillRect(b2.x - 2, b2.y - 2, 4, 4); } ctx.restore();
+
                 // paused
-                if (Game.paused) { ctx.save(); ctx.globalAlpha = .6; ctx.fillStyle = '#0b0f1e'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '700 36px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PAUSE', W / 2, H / 2); ctx.restore(); }
+                if (Game.paused) {
+                    ctx.save(); ctx.globalAlpha = .6; ctx.fillStyle = '#0b0f1e'; ctx.fillRect(0, 0, W, H);
+                    ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = '700 36px system-ui, sans-serif';
+                    ctx.textAlign = 'center'; ctx.fillText('PAUSE', W / 2, H / 2); ctx.restore();
+                }
             }
         };
+
+        // ===== Enemy snapshots for clients =====
+        function applyEnemies(list) {
+            State.enemies.length = 0;
+            for (const e of list) {
+                State.enemies.push({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color, vx: 0, vy: 0 });
+            }
+        }
 
         // ===== Game (lifecycle + fixed timestep) =====
         const Game = {
@@ -365,18 +577,88 @@
                 State.player.x = W / 2; State.player.y = H / 2; State.player.vx = 0; State.player.vy = 0; State.player.hp = Config.player.hp; State.player.alive = true;
                 State.weaponIndex = 0; State.ammo[2] = 0; State.ammo[3] = 0;
                 State.score = 0; State.wave = 1; State.spawnTimer = 0; State.pickupTimer = 0; State.lastFire = -1e9;
-                for (let i = 0; i < 2; i++) Systems.spawnPickup();
+                for (let i = 0; i < 2; i++) State.pickups.push({ x: Config.bounds.x + 80 + i * 60, y: Config.bounds.y + 80, w: 28, h: 28, type: i === 0 ? 2 : 3 });
                 HUD.update(); HUD.showOverlay('Velkommen til Box Head');
             },
-            start() { this.running = true; this.paused = false; HUD.hideOverlay(); NET.start(); this._acc = 0; this._last = performance.now(); requestAnimationFrame(this.loop.bind(this)); },
-            loop(ts) { if (!this.running) { return; } const frame = ts - this._last; this._last = ts; if (!this.paused) { this._acc = Math.min(this._acc + frame, 250); while (this._acc >= Config.fixedDt) { this.update(Config.fixedDt); this._acc -= Config.fixedDt; } this.render(); } requestAnimationFrame(this.loop.bind(this)); },
-            update(dt) {     // Send spillerens input til serveren
-                const ax = (Input.keys.has('KeyD') ? 1 : 0) - (Input.keys.has('KeyA') ? 1 : 0);
-                const ay = (Input.keys.has('KeyS') ? 1 : 0) - (Input.keys.has('KeyW') ? 1 : 0);
-                const shoot = Input.mouse.down;
-                NET.sendInput(ax, ay, shoot, Input.mouse.x, Input.mouse.y); if (Input.mouse.down) Systems.shoot(); Systems.movePlayer(dt); Systems.moveBullets(dt); Systems.moveEnemies(dt); Systems.damageOnTouch(dt); Systems.bulletsVsEnemies(); Systems.updateParticles(dt); Systems.tryPickup(); State.spawnTimer -= dt; State.pickupTimer -= dt; if (State.spawnTimer <= 0) { const perSec = Math.min(0.5 + State.wave * 0.18, 2.0); State.spawnTimer = 1000 / perSec; Systems.spawnEnemy(); } if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) { State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax); Systems.spawnPickup(); } if (State.score > State.wave * 150) { Systems.nextWave(); } HUD.update(); },
+            start() {
+                this.running = true; this.paused = false; HUD.hideOverlay();
+                NET.start();
+                this._acc = 0; this._last = performance.now();
+                requestAnimationFrame(this.loop.bind(this));
+                // net tick for host enemy snapshots (~20 Hz)
+                (function netTick() {
+                    const now = performance.now();
+                    if (!netTick._last || now - netTick._last > 50) {
+                        netTick._last = now;
+                        if (NET.getIsHost()) {
+                            const es = State.enemies.map(e => ({ x: e.x, y: e.y, size: e.size, hp: e.hp, spd: e.spd, type: e.type, color: e.color }));
+                            NET.sendEnemiesSnapshot(es);
+                        }
+                    }
+                    requestAnimationFrame(netTick);
+                })();
+            },
+            loop(ts) {
+                if (!this.running) { return; }
+                const frame = ts - this._last; this._last = ts;
+                if (!this.paused) {
+                    this._acc = Math.min(this._acc + frame, 250);
+                    while (this._acc >= Config.fixedDt) { this.update(Config.fixedDt); this._acc -= Config.fixedDt; }
+                    this.render();
+                }
+                requestAnimationFrame(this.loop.bind(this));
+            },
+            update(dt) {
+                // lokal input
+                if (Input.mouse.down) Systems.shoot();
+                Systems.movePlayer(dt);
+                Systems.moveBullets(dt);
+
+                // Enemy simulation kun på host
+                if (NET.getIsHost()) {
+                    Systems.moveEnemies(dt);
+                    Systems.damageOnTouch(dt);
+                    Systems.bulletsVsEnemies();
+                }
+
+                Systems.updateParticles(dt);
+                Systems.tryPickup();
+
+                // Spawns/waves/pickups kun på host
+                State.spawnTimer -= dt; State.pickupTimer -= dt;
+                if (NET.getIsHost()) {
+                    if (State.spawnTimer <= 0) {
+                        const perSec = Math.min(0.5 + State.wave * 0.18, 2.0);
+                        State.spawnTimer = 1000 / perSec;
+                        Systems.spawnEnemy();
+                    }
+                    if (State.pickupTimer <= 0 && State.pickups.length < Config.pickups.max) {
+                        State.pickupTimer = MathX.rand(Config.pickups.spawnMin, Config.pickups.spawnMax);
+                        Systems.spawnPickup();
+                    }
+                    if (State.score > State.wave * 150) Systems.nextWave();
+                }
+
+                // send lokal spiller-state til server
+                NET.sendState();
+
+                // smoothing af andre spillere
+                for (const [, o] of NET.getOthers()) {
+                    const s = 0.18;
+                    o.x += (o.tx - o.x) * s;
+                    o.y += (o.ty - o.y) * s;
+                }
+
+                HUD.update();
+            },
             render() { Render.draw(); },
-            gameOver() { if (!State.player.alive) return; State.player.alive = false; this.paused = false; if (State.score > State.highScore) { State.highScore = State.score; Save.highScore = State.highScore; } HUD.showOverlay(`Game Over – Score: ${State.score} (High Score: ${State.highScore})`); }
+            gameOver() {
+                if (!State.player.alive) return;
+                State.player.alive = false;
+                this.paused = false;
+                if (State.score > State.highScore) { State.highScore = State.score; Save.highScore = State.highScore; }
+                HUD.showOverlay(`Game Over – Score: ${State.score} (High Score: ${State.highScore})`);
+            }
         };
 
         // ===== Wire up buttons =====
@@ -392,8 +674,7 @@
             test('Default weapon = Pistol', () => assert(Weapons[State.weaponIndex].name === 'Pistol', 'not pistol'));
             test('Player 4× slower', () => assert(State.player.speed <= 0.6, 'speed too high'));
             test('Shotgun pellets > 1', () => { State.weaponIndex = 1; assert(Weapons[State.weaponIndex].pellets > 1, 'shotgun pellets'); State.weaponIndex = 0; });
-            // New tests for requested changes
-            test('Pistol cooldown is 500ms', () => assert(Weapons[0].cd === 500, `pistol cd=${Weapons[0].cd}`));
+            test('Pistol cooldown er 500ms', () => assert(Weapons[0].cd === 500, `pistol cd=${Weapons[0].cd}`));
             test('Ammo crate values (S=40, R=120)', () => { assert(Weapons[1].pickup === 40, 'shotgun pickup not 40'); assert(Weapons[2].pickup === 120, 'rifle pickup not 120'); });
         })();
     </script>
