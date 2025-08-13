@@ -263,7 +263,7 @@
                 $('lobbyRole').textContent = isHost ? 'Host' : 'Client';
                 $('startMatchBtn').classList.toggle('hidden', !isHost);
             }
-            function renderLobby() {
+            function _renderLobby() {
                 $('roomName').textContent = room || '—';
                 const list = $('lobbyList'); list.innerHTML = '';
                 const ids = new Set(); if (myId) ids.add(myId); for (const id of others.keys()) ids.add(id);
@@ -303,22 +303,22 @@
                         const old = prev.get(id);
                         others.set(id, old || { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0, hp: 100, dead: false });
                     }
-                    roleHud(); renderLobby();
+                    roleHud(); _renderLobby();
                 });
 
                 connection.on("PlayerJoined", id => {
                     if (id !== myId) others.set(id, { x: 0, y: 0, tx: 0, ty: 0, aim: 0, weaponIndex: 0, hp: 100, dead: false });
-                    renderLobby();
+                    _renderLobby();
                 });
-                connection.on("PlayerLeft", id => { others.delete(id); names.delete(id); renderLobby(); });
-                connection.on("NamesSnapshot", dict => { names.clear(); for (const k in dict) names.set(k, dict[k]); renderLobby(); });
-                connection.on("PlayerNamed", (id, name) => { names.set(id, name); renderLobby(); });
+                connection.on("PlayerLeft", id => { others.delete(id); names.delete(id); _renderLobby(); });
+                connection.on("NamesSnapshot", dict => { names.clear(); for (const k in dict) names.set(k, dict[k]); _renderLobby(); });
+                connection.on("PlayerNamed", (id, name) => { names.set(id, name); _renderLobby(); });
                 connection.on("GameState", state => { inGame = !!state; });
 
                 connection.on("JoinAccepted", rn => {
                     room = rn;
                     connection.invoke("SetName", room, (State.myName || 'Spiller')).catch(() => { });
-                    roleHud(); renderLobby(); hide('menu'); show('lobby');
+                    roleHud(); _renderLobby(); hide('menu'); show('lobby');
                 });
 
                 connection.on("GameStarted", () => {
@@ -377,7 +377,7 @@
                         const o = others.get(targetId);
                         if (o) { o.hp = Math.max(0, hp | 0); o.dead = !alive; }
                     }
-                    HUDupdate(); renderLobby();
+                    HUDupdate(); _renderLobby();
                 });
 
                 connection.on("ShootRequest", (shooterId, payload) => {
@@ -422,7 +422,7 @@
                 if (!room) return;
                 try { await connection.invoke("Leave", room); } catch { }
                 room = null; leaderId = null; others.clear(); names.clear(); inGame = false; isHost = false;
-                roleHud(); renderLobby();
+                roleHud(); _renderLobby();
             }
 
             function sendState() {
