@@ -335,6 +335,7 @@
                 });
 
                 connection.on("GameStarted", () => {
+                    roleHud();
                     inGame = true; hide('lobby');
                     if (isHost && State.obstacles.length === 0) {
                         MapGen.makeOpenArena();
@@ -383,11 +384,22 @@
                     if (targetId === myId) {
                         State.player.hp = Math.max(0, hp | 0);
                         State.player.alive = !!alive;
+
+                        if (!State.player.alive) {
+                            // NYT: Stop alt input når man dør
+                            Input.mouse.down = false;          // Stop skydning
+                            State.player.vx = 0;               // Stop bevægelse
+                            State.player.vy = 0;
+                        }
                     } else {
                         const o = others.get(targetId);
-                        if (o) { o.hp = Math.max(0, hp | 0); o.dead = !alive; }
+                        if (o) {
+                            o.hp = Math.max(0, hp | 0);
+                            o.dead = !alive;
+                        }
                     }
-                    HUDupdate(); renderLobby();
+                    HUDupdate();
+                    renderLobby();
                 });
 
                 connection.on("ShootRequest", (shooterId, payload) => {
@@ -456,7 +468,11 @@
             }
 
             function getOthers() { return others; }
-            function getIsHost() { return isHost; }
+            function getIsHost() {
+                // Sandhedskilde = leaderId fra server + min id
+                return (leaderId && myId) ? (leaderId === myId) : isHost;
+            }
+
             function getMyId() { return myId; }
             function getName(id) { return names.get(id) || ""; }
             function getRoom() { return room; }
@@ -632,6 +648,7 @@
                 Systems._dashLast = now;
             },
             shoot() {
+                if (!State.player.alive) return; 
                 const w = Weapons[State.weaponIndex];
                 const now = performance.now();
                 if (now - State.lastFire < w.cd) return;
@@ -656,6 +673,7 @@
                 HUDupdate();
             },
             movePlayer(dt) {
+                if (!State.player.alive) return;
                 let ax = 0, ay = 0; const k = Input.keys;
                 if (k.has('KeyW')) ay -= 1; if (k.has('KeyS')) ay += 1;
                 if (k.has('KeyA')) ax -= 1; if (k.has('KeyD')) ax += 1;
