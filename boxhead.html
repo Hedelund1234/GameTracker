@@ -778,7 +778,20 @@
             },
             tryPickup() {
                 if (Game.mode === 'mp' && !NET.getIsHost()) return;
-                function give(toId, type) { const w = Weapons[type - 1]; NET.grantAmmoTo(toId, (type - 1), w.pickup | 0); }
+                function give(toId, type) {
+                    const w = Weapons[type - 1];
+                    const amount = w.pickup | 0;
+                    const slot = type; // 1=Pistol, 2=Shotgun, 3=Riffel
+
+                    if (Game.mode === 'sp' || toId === 'sp') {
+                        // Singleplayer: giv ammo direkte
+                        State.ammo[slot] = (State.ammo[slot] || 0) + amount;
+                        HUDupdate();
+                    } else {
+                        // Multiplayer: lad host/server gøre det
+                        NET.grantAmmoTo(toId, (type - 1), amount);
+                    }
+                }
                 const candidates = [{ id: NET.getMyId() || 'sp', x: State.player.x, y: State.player.y }];
                 if (Game.mode === 'mp' && NET.getIsHost()) { for (const [id, o] of NET.getOthers()) candidates.push({ id, x: o.tx ?? o.x, y: o.ty ?? o.y }); }
                 for (let i = State.pickups.length - 1; i >= 0; i--) {
