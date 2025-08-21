@@ -1,0 +1,545 @@
+﻿<!doctype html>
+<html lang="da">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bird Game</title>
+    <style>
+        :root {
+            --bg1: #7dd3fc; /* sky-300 */
+            --bg2: #22d3ee; /* cyan-400 */
+            --text: #0f172a; /* slate-900 */
+            --panel: rgba(255,255,255,0.8);
+            --panelBorder: rgba(255,255,255,0.6);
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
+            background: #e6f7ff;
+            color: var(--text);
+        }
+
+        .wrap {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 12px;
+        }
+
+        .game {
+            position: relative;
+            height: 70vh;
+            min-height: 520px;
+            max-height: 80vh;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,.2);
+            background: linear-gradient(180deg,var(--bg1),var(--bg2));
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            cursor: pointer;
+        }
+
+        .badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,.4);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+        }
+
+        /* Panel / menu */
+        .panel-wrap {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .panel {
+            width: min(720px,92%);
+            max-height: 90%;
+            overflow: hidden;
+            border-radius: 16px;
+            background: var(--panel);
+            backdrop-filter: blur(6px);
+            border: 1px solid var(--panelBorder);
+            box-shadow: 0 14px 40px rgba(0,0,0,.25);
+        }
+
+        .panel-hd {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--panelBorder);
+            background: rgba(255,255,255,.6);
+        }
+
+        .panel-ttl {
+            font-weight: 800;
+            font-size: clamp(20px,2.5vw,28px);
+        }
+
+        .panel-sub {
+            font-size: 14px;
+            color: #334155;
+        }
+
+        .panel-body {
+            display: grid;
+            grid-template-columns: 1fr;
+        }
+
+        @media (min-width: 860px) {
+            .panel-body {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .col {
+            padding: 18px 20px;
+        }
+
+            .col.right {
+                background: rgba(255,255,255,.6);
+                border-top: 1px solid var(--panelBorder);
+            }
+
+        @media (min-width: 860px) {
+            .col.right {
+                border-top: none;
+                border-left: 1px solid var(--panelBorder);
+            }
+        }
+
+        .label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .input {
+            margin-top: 6px;
+            width: 100%;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 10px 12px;
+            font-size: 16px;
+            background: rgba(255,255,255,.9);
+            color: #0f172a;
+        }
+
+        .row {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .btn {
+            border: 0;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 600;
+            box-shadow: 0 4px 10px rgba(0,0,0,.08);
+            cursor: pointer
+        }
+
+            .btn.primary {
+                background: #0ea5e9;
+                color: #fff;
+            }
+
+                .btn.primary:hover {
+                    background: #0284c7
+                }
+
+            .btn.ghost {
+                background: #e2e8f0;
+                color: #0f172a;
+            }
+
+                .btn.ghost:hover {
+                    background: #cbd5e1
+                }
+
+        .muted {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #64748b
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px
+        }
+
+        th, td {
+            padding: 6px 8px
+        }
+
+        thead th {
+            color: #475569;
+            text-align: left
+        }
+
+        tbody tr:nth-child(odd) {
+            background: rgba(255,255,255,.5)
+        }
+
+        tbody tr:nth-child(even) {
+            background: rgba(255,255,255,.3)
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        .scoreTitle {
+            font-size: 36px;
+            font-weight: 900;
+            line-height: 1.1
+        }
+
+        /* Utility */
+        .hidden {
+            display: none
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="game" id="game">
+            <canvas id="game-canvas"></canvas>
+            <div class="badge">Flappy Bird · Vanilla JS</div>
+
+            <!-- MENU / GAME OVER PANEL -->
+            <div id="panelWrap" class="panel-wrap">
+                <div class="panel" role="dialog" aria-modal="true" aria-labelledby="panelTitle">
+                    <div class="panel-hd">
+                        <div id="panelTitle" class="panel-ttl">Startmenu</div>
+                        <div class="panel-sub">Din bedste: <b id="bestLabel">0</b></div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="col">
+                            <div id="lastScoreWrap" class="hidden" aria-live="polite">
+                                <div class="label">Din score</div>
+                                <div id="lastScore" class="scoreTitle">0</div>
+                            </div>
+
+                            <label for="name" class="label">Dit navn</label>
+                            <input id="name" class="input" maxlength="16" placeholder="Skriv dit navn" />
+
+                            <div class="row">
+                                <button id="startBtn" class="btn primary">Start spil</button>
+                                <button id="resetBestBtn" class="btn ghost" title="R">Nulstil bedste</button>
+                                <button id="resetListBtn" class="btn ghost" title="H">Nulstil liste</button>
+                            </div>
+
+                            <p class="muted">Styring: Mellemrum / ↑ eller klik/tap for at hoppe. Enter = start/genstart. R = nulstil bedste. H = nulstil liste.</p>
+                            <p class="muted">Highscores gemmes lokalt i din browser.</p>
+                        </div>
+
+                        <div class="col right">
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px">
+                                <div class="label" style="margin:0">Top 10 Highscores</div>
+                            </div>
+                            <div style="max-height:40vh; overflow:auto; padding-right:4px">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th style="width:36px">#</th>
+                                            <th>Navn</th>
+                                            <th style="text-align:right">Score</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="hsBody">
+                                        <tr><td colspan="3" style="padding:12px; color:#64748b">Ingen scores endnu – vær den første!</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>(function(){
+    const container = document.getElementById('game');
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+
+    const panelWrap = document.getElementById('panelWrap');
+    const panelTitle = document.getElementById('panelTitle');
+    const bestLabel = document.getElementById('bestLabel');
+    const startBtn = document.getElementById('startBtn');
+    const nameInput = document.getElementById('name');
+    const resetBestBtn = document.getElementById('resetBestBtn');
+    const resetListBtn = document.getElementById('resetListBtn');
+    const hsBody = document.getElementById('hsBody');
+    const lastScoreWrap = document.getElementById('lastScoreWrap');
+    const lastScore = document.getElementById('lastScore');
+
+    // Persistent state
+    let playerName = localStorage.getItem('flappy_player_name') || 'Spiller';
+    nameInput.value = playerName;
+
+    let best = parseInt(localStorage.getItem('flappy_best_v1')||'0',10) || 0;
+    bestLabel.textContent = String(best);
+
+    let highscores = [];
+    try {
+      const raw = localStorage.getItem('flappy_highscores_v1');
+      highscores = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(highscores)) highscores = [];
+    } catch { highscores = []; }
+
+    function saveHighscores(){ try{ localStorage.setItem('flappy_highscores_v1', JSON.stringify(highscores)); }catch{} }
+
+    function renderHighscores(){
+      hsBody.innerHTML = '';
+      if (highscores.length === 0){
+        const tr = document.createElement('tr');
+        const td = document.createElement('td'); td.colSpan = 3; td.style.padding='12px'; td.style.color='#64748b';
+        td.textContent = 'Ingen scores endnu – vær den første!'; tr.appendChild(td); hsBody.appendChild(tr); return;
+      }
+      highscores.slice(0,10).forEach((row, i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="mono">${i+1}</td><td>${escapeHtml(row.name)}</td><td style="text-align:right; font-weight:700">${row.score}</td>`;
+        hsBody.appendChild(tr);
+      });
+    }
+
+    function addHighscore(name, s){
+      highscores.push({ name: (name||'Spiller').slice(0,16), score: s, date: Date.now() });
+      highscores.sort((a,b)=> b.score - a.score || a.date - b.date);
+      highscores = highscores.slice(0,10);
+      saveHighscores();
+      renderHighscores();
+    }
+
+    function escapeHtml(str){ return String(str).replace(/[&<>"']/g, s=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[s])); }
+
+    // Game state
+    let status = 'menu'; // menu | playing | gameover
+    let score = 0;
+
+    const g = {
+      width: 640,
+      height: 360,
+      dpr: Math.max(1, Math.min(2.5, window.devicePixelRatio || 1)),
+      ground: 88,
+      birdX: 180,
+      birdY: 200,
+      birdR: 14,
+      velY: 0,
+      gravity: 1800,
+      flapV: -520,
+      pipes: [],
+      speed: 240,
+      spawnTimer: 0,
+      spawnEvery: 1.3,
+      rngSeed: Math.floor(Math.random()*1e9)
+    };
+
+    function rand(min,max){
+      // xorshift32
+      let s = g.rngSeed|0; s ^= s << 13; s ^= s >>> 17; s ^= s << 5; g.rngSeed = s|0;
+      return min + (Math.abs(s)%1000)/1000 * (max-min);
+    }
+
+    function resetGame(){
+      g.pipes = [];
+      g.velY = 0;
+      g.birdY = Math.max(g.birdR + 10, Math.min(g.height * .5, g.height - g.ground - 60));
+      g.spawnTimer = 0;
+      score = 0;
+    }
+
+    function startGame(){
+      resetGame();
+      status = 'playing';
+      updateUI();
+    }
+
+    function endGame(){
+      status = 'gameover';
+      if (score > best){ best = score; try{ localStorage.setItem('flappy_best_v1', String(best)); }catch{} }
+      addHighscore(playerName, score);
+      updateUI();
+    }
+
+    function flap(){
+      if (status === 'menu' || status === 'gameover'){ startGame(); return; }
+      if (status === 'playing'){ g.velY = g.flapV; }
+    }
+
+    // UI hooks
+    startBtn.addEventListener('click', startGame);
+    resetBestBtn.addEventListener('click', ()=>{ best = 0; try{ localStorage.removeItem('flappy_best_v1'); }catch{}; bestLabel.textContent = '0'; });
+    resetListBtn.addEventListener('click', ()=>{ highscores = []; try{ localStorage.removeItem('flappy_highscores_v1'); }catch{}; renderHighscores(); });
+
+    nameInput.addEventListener('input', e=>{ playerName = e.target.value; try{ localStorage.setItem('flappy_player_name', playerName); }catch{} });
+    nameInput.addEventListener('keydown', e=>{ if (e.key === 'Enter') startGame(); });
+
+    function updateUI(){
+      bestLabel.textContent = String(best);
+      if (status === 'playing'){
+        panelWrap.classList.add('hidden');
+      } else {
+        panelWrap.classList.remove('hidden');
+        panelTitle.textContent = status === 'menu' ? 'Startmenu' : 'Game Over';
+        lastScoreWrap.classList.toggle('hidden', status !== 'gameover');
+        lastScore.textContent = String(score);
+        startBtn.textContent = status === 'menu' ? 'Start spil' : 'Spil igen';
+      }
+    }
+
+    // Resize
+    const ro = new ResizeObserver(()=>{
+      const rect = container.getBoundingClientRect();
+      g.dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+      g.width = Math.max(360, Math.floor(rect.width));
+      g.height = Math.max(420, Math.floor(rect.height));
+      canvas.width = Math.floor(g.width * g.dpr);
+      canvas.height = Math.floor(g.height * g.dpr);
+      canvas.style.width = g.width + 'px';
+      canvas.style.height = g.height + 'px';
+    });
+    ro.observe(container);
+
+    // Input
+    window.addEventListener('keydown', (e)=>{
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
+      if (typing) return;
+      if (e.repeat) return;
+      if (e.code === 'Space' || e.code === 'ArrowUp'){ e.preventDefault(); flap(); }
+      else if (e.code === 'Enter'){ e.preventDefault(); if (status !== 'playing') startGame(); }
+      else if (e.key.toLowerCase() === 'r'){ best = 0; try{ localStorage.removeItem('flappy_best_v1'); }catch{}; bestLabel.textContent = '0'; }
+      else if (e.key.toLowerCase() === 'h'){ highscores = []; try{ localStorage.removeItem('flappy_highscores_v1'); }catch{}; renderHighscores(); }
+    });
+    const onPointer = ()=> flap();
+    canvas.addEventListener('pointerdown', onPointer, {passive:true});
+    canvas.addEventListener('touchstart', onPointer, {passive:true});
+
+    // Drawing helpers
+    function drawBackground(){
+      const grd = ctx.createLinearGradient(0,0,0,g.height);
+      grd.addColorStop(0,'#7dd3fc'); grd.addColorStop(1,'#22d3ee');
+      ctx.fillStyle = grd; ctx.fillRect(0,0,g.width,g.height);
+      ctx.globalAlpha = 0.25; ctx.fillStyle = '#fff';
+      for(let i=0;i<6;i++){
+        const cx = ((i*240 + (Date.now()*-0.02)) % (g.width + 260)) - 130;
+        const cy = 40 + (i*37) % (g.height*0.5);
+        drawCloud(cx, cy);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawGround(){
+      ctx.fillStyle = '#065f46';
+      ctx.fillRect(0, g.height - g.ground, g.width, g.ground);
+      ctx.globalAlpha = .25;
+      for(let x=0;x<g.width;x+=24){
+        ctx.fillStyle = ((x/24)%2===0) ? '#10b981' : '#34d399';
+        ctx.fillRect(x, g.height - g.ground + 8, 18, g.ground - 16);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawPipe(p, floorY){
+      ctx.fillStyle = '#047857';
+      ctx.fillRect(p.x, 0, p.w, p.gapY - p.gap/2);
+      ctx.fillRect(p.x, p.gapY + p.gap/2, p.w, floorY - (p.gapY + p.gap/2));
+      ctx.fillStyle = '#059669';
+      ctx.fillRect(p.x-6, (p.gapY - p.gap/2)-14, p.w+12, 14);
+      ctx.fillRect(p.x-6, (p.gapY + p.gap/2), p.w+12, 14);
+    }
+
+    function drawBird(x,y,r,vy){
+      const tilt = Math.max(-0.8, Math.min(0.8, vy / 600));
+      ctx.save(); ctx.translate(x,y); ctx.rotate(tilt);
+      ctx.fillStyle = '#f59e0b'; roundedCircle(0,0,r); ctx.fill();
+      ctx.fillStyle = '#fde68a'; roundedCircle(r*.2, r*.15, r*.7); ctx.fill();
+      ctx.fillStyle = '#fff'; roundedCircle(r*.4, -r*.2, r*.38); ctx.fill();
+      ctx.fillStyle = '#111827'; roundedCircle(r*.55, -r*.2, r*.14); ctx.fill();
+      ctx.fillStyle = '#fb923c'; ctx.beginPath(); ctx.moveTo(r*.9,0); ctx.lineTo(r*1.5, r*.18); ctx.lineTo(r*.9, r*.36); ctx.closePath(); ctx.fill();
+      const wingLift = Math.sin(Date.now()*0.02) * r * 0.2; ctx.fillStyle = '#fbbf24'; roundedRect(-r*.2, -r*.2 - wingLift, r*.8, r*.5, r*.2); ctx.fill();
+      ctx.restore();
+    }
+
+    function drawBadge(right, top, text){
+      ctx.save();
+      const padX=10; const padY=8; ctx.font = '600 14px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif';
+      const w = ctx.measureText(text).width + padX*2; const h = 28;
+      roundedRect(right - w, top, w, h, 14); ctx.fillStyle='rgba(2,6,23,0.5)'; ctx.fill();
+      ctx.fillStyle='#f1f5f9'; ctx.textAlign='left'; ctx.fillText(text, right - w + padX, top + 18);
+      ctx.restore();
+    }
+
+    function drawCloud(x,y){
+      ctx.beginPath(); roundedCircle(x+0,y+16,18); roundedCircle(x+16,y+8,22); roundedCircle(x+34,y+16,18); roundedCircle(x+24,y+22,20); ctx.fill();
+    }
+
+    function roundedRect(x,y,w,h,r){ const rr = Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+rr,y); ctx.arcTo(x+w,y,x+w,y+h,rr); ctx.arcTo(x+w,y+h,x,y+h,rr); ctx.arcTo(x,y+h,x,y,rr); ctx.arcTo(x,y,x+w,y,rr); ctx.closePath(); }
+    function roundedCircle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.closePath(); }
+
+    function circleRectOverlap(cx,cy,cr,r){ const nearestX = Math.max(r.x, Math.min(cx, r.x + r.w)); const nearestY = Math.max(r.y, Math.min(cy, r.y + r.h)); const dx = cx - nearestX; const dy = cy - nearestY; return dx*dx + dy*dy <= cr*cr; }
+    function circleHitsPipe(cx,cy,cr,pipe,floorY){ const topRect = {x:pipe.x, y:0, w:pipe.w, h:pipe.gapY - pipe.gap/2}; const botRect = {x:pipe.x, y:pipe.gapY + pipe.gap/2, w:pipe.w, h: floorY - (pipe.gapY + pipe.gap/2)}; return circleRectOverlap(cx,cy,cr,topRect) || circleRectOverlap(cx,cy,cr,botRect); }
+
+    // Loop
+    let prev = performance.now();
+    function draw(){
+      ctx.save(); ctx.scale(g.dpr, g.dpr);
+      drawBackground();
+      g.pipes.forEach(p=> drawPipe(p, g.height - g.ground));
+      drawGround();
+      drawBird(g.birdX, g.birdY, g.birdR, g.velY);
+      // HUD
+      ctx.font = '700 28px system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif'; ctx.textAlign='center';
+      ctx.fillStyle='#0f172a'; ctx.fillText(String(score), g.width/2 + 2, 72 + 2);
+      ctx.fillStyle='#f8fafc'; ctx.fillText(String(score), g.width/2, 72);
+      drawBadge(g.width - 16, 16, 'Bedste: ' + best);
+      ctx.restore();
+    }
+
+    function tick(now){
+      const dt = Math.min((now - prev) / 1000, 1/30); prev = now;
+
+      if (status === 'playing'){
+        g.velY += g.gravity * dt; g.birdY += g.velY * dt;
+        g.spawnTimer += dt; const scaledSpeed = g.speed + Math.min(160, score*6);
+        if (g.spawnTimer >= g.spawnEvery){ g.spawnTimer = 0; const gapBase = 170; const gap = Math.max(120, gapBase - score*2); const margin = 40; const minY = margin + gap/2; const maxY = (g.height - g.ground - margin) - gap/2; const gapY = rand(minY, maxY); g.pipes.push({x:g.width + 40, gapY, gap, w:78}); }
+        for (let i=g.pipes.length-1;i>=0;i--){ const p=g.pipes[i]; p.x -= (g.speed + Math.min(160, score*6)) * dt; if (!p.scored && p.x + p.w < g.birdX){ p.scored=true; score++; } if (p.x + p.w < -120){ g.pipes.splice(i,1);} }
+        const floorY = g.height - g.ground;
+        if (g.birdY - g.birdR <= 0 || g.birdY + g.birdR >= floorY){ endGame(); }
+        else { for (const p of g.pipes){ if (circleHitsPipe(g.birdX, g.birdY, g.birdR, p, floorY)){ endGame(); break; } } }
+      }
+
+      draw(); requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
+
+    // Init
+    renderHighscores();
+    updateUI();
+
+  })();</script>
+</body>
+</html>
